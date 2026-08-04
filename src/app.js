@@ -1,13 +1,19 @@
 const express = require("express");
 
+const { name, version } = require("../package.json");
 const { items } = require("./data");
 
 const app = express();
+const health = Object.freeze({
+  status: "ok",
+  service: Object.freeze({ name, version }),
+  checks: Object.freeze({ liveness: "ok", readiness: "ready" }),
+});
 
 app.disable("x-powered-by");
 
 app.get("/health", (_request, response) => {
-  response.json({ status: "ok" });
+  response.json(health);
 });
 
 app.get("/api/items", (_request, response) => {
