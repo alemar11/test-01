@@ -5,6 +5,10 @@ It provides a small Express REST API backed exclusively by deterministic,
 static fixtures. Its role is to expose the server-side contract that other
 repositories can consume.
 
+## Stack auto-close experiment
+
+Base Task layer for the controlled automatic-closure experiment.
+
 There is intentionally no database, persistence, or write operation: the API
 currently exposes GET endpoints only.
 
