@@ -8,6 +8,8 @@ repositories can consume.
 ## Stacked PR demo
 
 This section is the foundation of a two-layer stacked pull request example.
+The follow-up layer extends this section from a branch that depends on the
+foundation, making the review order visible in GitHub.
 
 There is intentionally no database, persistence, or write operation: the API
 currently exposes GET endpoints only.
