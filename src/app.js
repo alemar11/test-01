@@ -1,7 +1,7 @@
 const express = require("express");
 
 const { name, version } = require("../package.json");
-const { getItemById, getItems } = require("./items-repository");
+const { findItemById, listItems } = require("./items-repository");
 
 const app = express();
 const health = Object.freeze({
@@ -43,7 +43,7 @@ app.get("/api/items", (request, response) => {
   const queryKeys = Object.keys(request.query);
 
   if (queryKeys.length === 0) {
-    response.json({ data: getItems() });
+    response.json({ data: listItems() });
     return;
   }
 
@@ -71,7 +71,7 @@ app.get("/api/items", (request, response) => {
 
   const page = parsedPage ?? 1;
   const limit = parsedLimit ?? 20;
-  const filteredItems = getItems({ status, q });
+  const filteredItems = listItems({ status, q });
   const total = filteredItems.length;
   const start = (page - 1) * limit;
 
@@ -87,7 +87,7 @@ app.get("/api/items", (request, response) => {
 });
 
 app.get("/api/items/:id", (request, response) => {
-  const item = getItemById(request.params.id);
+  const item = findItemById(request.params.id);
 
   if (!item) {
     response.status(404).json({
