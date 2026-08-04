@@ -8,6 +8,7 @@ repositories can consume.
 ## Stack auto-close experiment
 
 Base Task layer for the controlled automatic-closure experiment.
+Child Task layer extending the base branch for the same stack experiment.
 
 There is intentionally no database, persistence, or write operation: the API
 currently exposes GET endpoints only.
