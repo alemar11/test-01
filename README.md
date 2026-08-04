@@ -41,4 +41,49 @@ dependency-free static API contract is available to serve requests. The
 response deliberately omits volatile runtime, host, process, environment, and
 external-dependency details.
 
+## Read items
+
+`GET /api/items` returns every item in fixture order. A request without query
+parameters keeps the original response shape exactly:
+
+```json
+{
+  "data": [
+    { "id": "item-1", "name": "First item", "status": "active" },
+    { "id": "item-2", "name": "Second item", "status": "active" }
+  ]
+}
+```
+
+Queried reads support only these scalar parameters:
+
+| Parameter | Behavior |
+| --- | --- |
+| `status` | Exact status match; blank values are invalid. |
+| `q` | Case-insensitive name substring match after trimming; blank values are invalid. |
+| `page` | 1-based page number. Defaults to `1`. |
+| `limit` | Page size. Defaults to `20` and cannot exceed `100`. |
+
+Filters are applied before pagination without changing fixture order. For
+example, `GET /api/items?status=active&q=item&page=2&limit=1` returns:
+
+```json
+{
+  "data": [
+    { "id": "item-2", "name": "Second item", "status": "active" }
+  ],
+  "pagination": {
+    "page": 2,
+    "limit": 1,
+    "total": 2,
+    "totalPages": 2
+  }
+}
+```
+
+Pages beyond `totalPages` return an empty `data` array and retain the truthful
+pagination metadata. Unsupported parameters, repeated values, blank filters,
+non-decimal or non-positive `page`/`limit` values, and limits above `100`
+return HTTP 400 with `error.code` set to `"invalid_query"`.
+
 Run the backend tests with `npm test`.
