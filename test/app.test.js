@@ -4,6 +4,11 @@ const { test } = require("node:test");
 const packageMetadata = require("../package.json");
 const app = require("../src/app");
 
+const expectedItems = [
+  { id: "item-1", name: "First item", status: "active" },
+  { id: "item-2", name: "Second item", status: "active" },
+];
+
 let server;
 let baseUrl;
 
@@ -73,67 +78,21 @@ test("GET /health returns deterministic operational diagnostics", async () => {
   ]);
 });
 
-test("GET /api/items returns static items", async () => {
+test("GET /api/items preserves the exact no-query response", async () => {
   const result = await get("/api/items");
 
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body, {
-    data: [
-      { id: "item-1", name: "First item", status: "active" },
-      { id: "item-2", name: "Second item", status: "active" },
-    ],
-  });
+  assert.deepEqual(result.body, { data: expectedItems });
+  assert.deepEqual(Object.keys(result.body), ["data"]);
 });
 
-test("GET /api/items/:id returns an exact fixture match", async () => {
-  const result = await get("/api/items/item-1");
-
-  assert.equal(result.status, 200);
-  assert.deepEqual(result.body, {
-    data: { id: "item-1", name: "First item", status: "active" },
-  });
-});
-
-test("GET /api/items/:id returns the item-not-found contract", async () => {
-  const result = await get("/api/items/missing-item");
-
-  assert.equal(result.status, 404);
-  assert.deepEqual(result.body, {
-    error: {
-      code: "item_not_found",
-      message: "Item not found",
-    },
-  });
-});
-
-test("response mutation cannot change repository-backed items", async () => {
-  const firstCollection = await get("/api/items");
-  firstCollection.body.data[0].name = "Changed item";
-  firstCollection.body.data.reverse();
-
-  const detail = await get("/api/items/item-1");
-  const secondCollection = await get("/api/items");
-
-  assert.deepEqual(detail.body, {
-    data: { id: "item-1", name: "First item", status: "active" },
-  });
-  assert.deepEqual(secondCollection.body.data.map((item) => item.id), [
-    "item-1",
-    "item-2",
-  ]);
-  assert.equal(secondCollection.body.data[0].name, "First item");
-});
-
-test("GET /api/items filters by exact status", async () => {
+test("GET /api/items applies exact status filtering", async () => {
   const matching = await get("/api/items?status=active");
   const missing = await get("/api/items?status=inactive");
   const padded = await get("/api/items?status=%20active%20");
 
   assert.deepEqual(matching.body, {
-    data: [
-      { id: "item-1", name: "First item", status: "active" },
-      { id: "item-2", name: "Second item", status: "active" },
-    ],
+    data: expectedItems,
     pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
   });
   assert.deepEqual(missing.body, {
@@ -151,22 +110,34 @@ test("GET /api/items trims and case-folds name searches", async () => {
 
   assert.equal(result.status, 200);
   assert.deepEqual(result.body, {
-    data: [{ id: "item-2", name: "Second item", status: "active" }],
+    data: [expectedItems[1]],
     pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
   });
 });
 
-test("GET /api/items combines filters before paginating in fixture order", async () => {
+test("GET /api/items combines filters before pagination in fixture order", async () => {
   const result = await get("/api/items?status=active&q=item&page=2&limit=1");
 
   assert.equal(result.status, 200);
   assert.deepEqual(result.body, {
-    data: [{ id: "item-2", name: "Second item", status: "active" }],
+    data: [expectedItems[1]],
     pagination: { page: 2, limit: 1, total: 2, totalPages: 2 },
   });
 });
 
-test("GET /api/items returns truthful metadata for out-of-range pages", async () => {
+test("GET /api/items uses queried pagination defaults", async () => {
+  const result = await get("/api/items?q=item");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.pagination, {
+    page: 1,
+    limit: 20,
+    total: 2,
+    totalPages: 1,
+  });
+});
+
+test("GET /api/items returns truthful out-of-range metadata", async () => {
   const result = await get("/api/items?page=3&limit=1");
 
   assert.equal(result.status, 200);
@@ -194,13 +165,19 @@ for (const query of [
   "q=first&q=second",
   "page=1&page=2",
   "limit=1&limit=2",
+  "status[mode]=active",
+  "q[]=item",
   "status=",
+  "status=%20%20",
+  "q=",
   "q=%20%20",
   "page=",
+  "page=%201",
   "page=0",
   "page=-1",
   "page=1.5",
   "page=one",
+  "page=9007199254740992",
   "limit=",
   "limit=0",
   "limit=-1",
@@ -212,34 +189,47 @@ for (const query of [
     const result = await get(`/api/items?${query}`);
 
     assert.equal(result.status, 400);
-    assert.equal(result.body.error.code, "invalid_query");
-    assert.equal(result.body.error.message, "Invalid query parameters");
+    assert.deepEqual(result.body, {
+      error: {
+        code: "invalid_query",
+        message: "Invalid query parameters",
+      },
+    });
   });
 }
 
-test("an invalid query does not affect later item reads", async () => {
-  await get("/api/items?limit=101");
-  const result = await get("/api/items");
+test("GET /api/items/:id returns an exact fixture match", async () => {
+  const result = await get("/api/items/item-1");
 
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body, {
-    data: [
-      { id: "item-1", name: "First item", status: "active" },
-      { id: "item-2", name: "Second item", status: "active" },
-    ],
-  });
+  assert.deepEqual(result.body, { data: expectedItems[0] });
 });
 
-test("unknown routes still return the not-found contract", async () => {
-  const result = await get("/missing");
+test("GET /api/items/:id returns the item-not-found contract", async () => {
+  const result = await get("/api/items/missing-item");
 
   assert.equal(result.status, 404);
   assert.deepEqual(result.body, {
-    error: { code: "not_found", message: "Route not found" },
+    error: {
+      code: "item_not_found",
+      message: "Item not found",
+    },
   });
 });
 
-test("unknown routes return the JSON 404 contract", async () => {
+test("response mutation cannot change repository-backed items", async () => {
+  const firstCollection = await get("/api/items?q=item");
+  firstCollection.body.data[0].name = "Changed item";
+  firstCollection.body.data.reverse();
+
+  const detail = await get("/api/items/item-1");
+  const secondCollection = await get("/api/items");
+
+  assert.deepEqual(detail.body, { data: expectedItems[0] });
+  assert.deepEqual(secondCollection.body, { data: expectedItems });
+});
+
+test("unknown routes return the generic JSON 404 contract", async () => {
   const result = await get("/not-found");
 
   assert.equal(result.status, 404);
@@ -251,14 +241,16 @@ test("unknown routes return the JSON 404 contract", async () => {
   });
 });
 
-test("non-GET item requests retain the generic 404 contract", async () => {
-  const result = await request("/api/items/item-1", { method: "POST" });
+for (const path of ["/api/items", "/api/items/item-1"]) {
+  test(`non-GET ${path} retains the generic 404 contract`, async () => {
+    const result = await request(path, { method: "POST" });
 
-  assert.equal(result.status, 404);
-  assert.deepEqual(result.body, {
-    error: {
-      code: "not_found",
-      message: "Route not found",
-    },
+    assert.equal(result.status, 404);
+    assert.deepEqual(result.body, {
+      error: {
+        code: "not_found",
+        message: "Route not found",
+      },
+    });
   });
-});
+}
