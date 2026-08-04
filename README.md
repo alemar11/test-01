@@ -5,6 +5,10 @@ It provides a small Express REST API backed exclusively by deterministic,
 static fixtures. Its role is to expose the server-side contract that other
 repositories can consume.
 
+## Stacked PR demo
+
+This section is the foundation of a two-layer stacked pull request example.
+
 There is intentionally no database, persistence, or write operation: the API
 currently exposes GET endpoints only.
 
