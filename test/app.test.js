@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
+const packageMetadata = require("../package.json");
 const app = require("../src/app");
 
 let server;
@@ -41,11 +42,31 @@ async function get(path) {
   };
 }
 
-test("GET /health returns a static health response", async () => {
-  const result = await get("/health");
+test("GET /health returns deterministic operational diagnostics", async () => {
+  const firstResult = await get("/health");
+  const secondResult = await get("/health");
+  const expectedBody = {
+    status: "ok",
+    service: {
+      name: packageMetadata.name,
+      version: packageMetadata.version,
+    },
+    checks: {
+      liveness: "ok",
+      readiness: "ready",
+    },
+  };
 
-  assert.equal(result.status, 200);
-  assert.deepEqual(result.body, { status: "ok" });
+  assert.equal(firstResult.status, 200);
+  assert.equal(secondResult.status, 200);
+  assert.deepEqual(firstResult.body, expectedBody);
+  assert.deepEqual(secondResult.body, expectedBody);
+  assert.deepEqual(secondResult.body, firstResult.body);
+  assert.deepEqual(Object.keys(firstResult.body).sort(), [
+    "checks",
+    "service",
+    "status",
+  ]);
 });
 
 test("GET /api/items returns static items", async () => {
@@ -172,5 +193,17 @@ test("unknown routes still return the not-found contract", async () => {
   assert.equal(result.status, 404);
   assert.deepEqual(result.body, {
     error: { code: "not_found", message: "Route not found" },
+  });
+});
+
+test("unknown routes return the JSON 404 contract", async () => {
+  const result = await get("/not-found");
+
+  assert.equal(result.status, 404);
+  assert.deepEqual(result.body, {
+    error: {
+      code: "not_found",
+      message: "Route not found",
+    },
   });
 });

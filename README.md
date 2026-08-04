@@ -20,6 +20,27 @@ Available endpoints:
 - `GET /health`
 - `GET /api/items`
 
+`GET /health` returns the following deterministic operational diagnostics:
+
+```json
+{
+  "status": "ok",
+  "service": {
+    "name": "test-01",
+    "version": "1.0.0"
+  },
+  "checks": {
+    "liveness": "ok",
+    "readiness": "ready"
+  }
+}
+```
+
+The liveness signal means the process answered the request. Readiness means the
+dependency-free static API contract is available to serve requests. The
+response deliberately omits volatile runtime, host, process, environment, and
+external-dependency details.
+
 ## Read items
 
 `GET /api/items` returns every item in fixture order. A request without query
