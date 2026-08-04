@@ -198,6 +198,16 @@ for (const query of [
   });
 }
 
+test("an invalid query does not affect later item reads", async () => {
+  const invalidResult = await get("/api/items?limit=101");
+  const collectionResult = await get("/api/items");
+  const detailResult = await get("/api/items/item-1");
+
+  assert.equal(invalidResult.status, 400);
+  assert.deepEqual(collectionResult.body, { data: expectedItems });
+  assert.deepEqual(detailResult.body, { data: expectedItems[0] });
+});
+
 test("GET /api/items/:id returns an exact fixture match", async () => {
   const result = await get("/api/items/item-1");
 
