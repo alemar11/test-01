@@ -113,6 +113,20 @@ example, `GET /api/items?status=active&q=item&page=2&limit=1` returns:
 Pages beyond `totalPages` return an empty `data` array and retain the truthful
 pagination metadata. Unsupported parameters, repeated values, blank filters,
 non-decimal or non-positive `page`/`limit` values, and limits above `100`
-return HTTP 400 with `error.code` set to `"invalid_query"`.
+return HTTP 400:
+
+```json
+{
+  "error": {
+    "code": "invalid_query",
+    "message": "Invalid query parameters"
+  }
+}
+```
+
+Query values must be scalar. Structured values are rejected along with
+unsupported or repeated parameters. Item detail, health, and collection reads
+remain GET-only; other methods and unknown routes use the generic `not_found`
+response.
 
 Run the backend tests with `npm test`.

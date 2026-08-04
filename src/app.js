@@ -9,17 +9,12 @@ const health = Object.freeze({
   service: Object.freeze({ name, version }),
   checks: Object.freeze({ liveness: "ok", readiness: "ready" }),
 });
+const supportedItemQueryParameters = new Set(["status", "q", "page", "limit"]);
 
 app.disable("x-powered-by");
 
-app.get("/health", (_request, response) => {
-  response.json(health);
-});
-
-const supportedItemQueryParameters = new Set(["status", "q", "page", "limit"]);
-
 function invalidQuery(response) {
-  return response.status(400).json({
+  response.status(400).json({
     error: {
       code: "invalid_query",
       message: "Invalid query parameters",
@@ -40,43 +35,47 @@ function parsePositiveInteger(value) {
   return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
 
+app.get("/health", (_request, response) => {
+  response.json(health);
+});
+
 app.get("/api/items", (request, response) => {
-  const items = getItems();
   const queryKeys = Object.keys(request.query);
+
   if (queryKeys.length === 0) {
-    return response.json({ data: items });
+    response.json({ data: getItems() });
+    return;
   }
 
   if (queryKeys.some((key) => !supportedItemQueryParameters.has(key))) {
-    return invalidQuery(response);
+    invalidQuery(response);
+    return;
   }
 
   const { status, q } = request.query;
   if (
-    (status !== undefined && (typeof status !== "string" || status.trim() === "")) ||
+    (status !== undefined &&
+      (typeof status !== "string" || status.trim() === "")) ||
     (q !== undefined && (typeof q !== "string" || q.trim() === ""))
   ) {
-    return invalidQuery(response);
+    invalidQuery(response);
+    return;
   }
 
   const parsedPage = parsePositiveInteger(request.query.page);
   const parsedLimit = parsePositiveInteger(request.query.limit);
   if (parsedPage === null || parsedLimit === null || parsedLimit > 100) {
-    return invalidQuery(response);
+    invalidQuery(response);
+    return;
   }
 
   const page = parsedPage ?? 1;
   const limit = parsedLimit ?? 20;
-  const normalizedSearch = q?.trim().toLowerCase();
-  const filteredItems = items.filter(
-    (item) =>
-      (status === undefined || item.status === status) &&
-      (normalizedSearch === undefined || item.name.toLowerCase().includes(normalizedSearch)),
-  );
+  const filteredItems = getItems({ status, q });
   const total = filteredItems.length;
   const start = (page - 1) * limit;
 
-  return response.json({
+  response.json({
     data: filteredItems.slice(start, start + limit),
     pagination: {
       page,
