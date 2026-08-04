@@ -19,6 +19,35 @@ Available endpoints:
 
 - `GET /health`
 - `GET /api/items`
+- `GET /api/items/:id`
+
+Item reads are served through a read-only repository boundary over the frozen,
+ordered static fixtures. `GET /api/items` without query parameters returns the
+full collection as `{ "data": [...] }`. `GET /api/items/:id` uses an exact
+string ID match and returns the matching fixture:
+
+```json
+{
+  "data": {
+    "id": "item-1",
+    "name": "First item",
+    "status": "active"
+  }
+}
+```
+
+When no item has the requested ID, the detail endpoint returns HTTP 404:
+
+```json
+{
+  "error": {
+    "code": "item_not_found",
+    "message": "Item not found"
+  }
+}
+```
+
+Other missing routes continue to use the generic `not_found` response.
 
 `GET /health` returns the following deterministic operational diagnostics:
 

@@ -1,7 +1,7 @@
 const express = require("express");
 
 const { name, version } = require("../package.json");
-const { items } = require("./data");
+const { getItemById, getItems } = require("./items-repository");
 
 const app = express();
 const health = Object.freeze({
@@ -41,6 +41,7 @@ function parsePositiveInteger(value) {
 }
 
 app.get("/api/items", (request, response) => {
+  const items = getItems();
   const queryKeys = Object.keys(request.query);
   if (queryKeys.length === 0) {
     return response.json({ data: items });
@@ -84,6 +85,22 @@ app.get("/api/items", (request, response) => {
       totalPages: Math.ceil(total / limit),
     },
   });
+});
+
+app.get("/api/items/:id", (request, response) => {
+  const item = getItemById(request.params.id);
+
+  if (!item) {
+    response.status(404).json({
+      error: {
+        code: "item_not_found",
+        message: "Item not found",
+      },
+    });
+    return;
+  }
+
+  response.json({ data: item });
 });
 
 app.use((_request, response) => {
