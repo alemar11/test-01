@@ -35,7 +35,11 @@ test.after(async () => {
 });
 
 async function get(path) {
-  const response = await fetch(`${baseUrl}${path}`);
+  return request(path);
+}
+
+async function request(path, options) {
+  const response = await fetch(`${baseUrl}${path}`, options);
   return {
     status: response.status,
     body: await response.json(),
@@ -73,14 +77,67 @@ test("GET /api/items returns static items", async () => {
   const result = await get("/api/items");
 
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body.data, [
-    { id: "item-1", name: "First item", status: "active" },
-    { id: "item-2", name: "Second item", status: "active" },
+  assert.deepEqual(result.body, {
+    data: [
+      { id: "item-1", name: "First item", status: "active" },
+      { id: "item-2", name: "Second item", status: "active" },
+    ],
+  });
+});
+
+test("GET /api/items/:id returns an exact fixture match", async () => {
+  const result = await get("/api/items/item-1");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: { id: "item-1", name: "First item", status: "active" },
+  });
+});
+
+test("GET /api/items/:id returns the item-not-found contract", async () => {
+  const result = await get("/api/items/missing-item");
+
+  assert.equal(result.status, 404);
+  assert.deepEqual(result.body, {
+    error: {
+      code: "item_not_found",
+      message: "Item not found",
+    },
+  });
+});
+
+test("response mutation cannot change repository-backed items", async () => {
+  const firstCollection = await get("/api/items");
+  firstCollection.body.data[0].name = "Changed item";
+  firstCollection.body.data.reverse();
+
+  const detail = await get("/api/items/item-1");
+  const secondCollection = await get("/api/items");
+
+  assert.deepEqual(detail.body, {
+    data: { id: "item-1", name: "First item", status: "active" },
+  });
+  assert.deepEqual(secondCollection.body.data.map((item) => item.id), [
+    "item-1",
+    "item-2",
   ]);
+  assert.equal(secondCollection.body.data[0].name, "First item");
 });
 
 test("unknown routes return the JSON 404 contract", async () => {
   const result = await get("/not-found");
+
+  assert.equal(result.status, 404);
+  assert.deepEqual(result.body, {
+    error: {
+      code: "not_found",
+      message: "Route not found",
+    },
+  });
+});
+
+test("non-GET item requests retain the generic 404 contract", async () => {
+  const result = await request("/api/items/item-1", { method: "POST" });
 
   assert.equal(result.status, 404);
   assert.deepEqual(result.body, {

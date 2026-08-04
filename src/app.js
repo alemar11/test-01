@@ -1,7 +1,7 @@
 const express = require("express");
 
 const { name, version } = require("../package.json");
-const { items } = require("./data");
+const { getItemById, getItems } = require("./items-repository");
 
 const app = express();
 const health = Object.freeze({
@@ -17,7 +17,23 @@ app.get("/health", (_request, response) => {
 });
 
 app.get("/api/items", (_request, response) => {
-  response.json({ data: items });
+  response.json({ data: getItems() });
+});
+
+app.get("/api/items/:id", (request, response) => {
+  const item = getItemById(request.params.id);
+
+  if (!item) {
+    response.status(404).json({
+      error: {
+        code: "item_not_found",
+        message: "Item not found",
+      },
+    });
+    return;
+  }
+
+  response.json({ data: item });
 });
 
 app.use((_request, response) => {
