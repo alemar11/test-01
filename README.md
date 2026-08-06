@@ -5,6 +5,12 @@ It provides a small Express REST API backed exclusively by deterministic,
 static fixtures. Its role is to expose the server-side contract that other
 repositories can consume.
 
+## Stacked PR demo
+
+This section is the foundation of a two-layer stacked pull request example.
+The follow-up layer extends this section from a branch that depends on the
+foundation, making the review order visible in GitHub.
+
 ## Stack auto-close experiment
 
 Base Task layer for the controlled automatic-closure experiment.
