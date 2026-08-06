@@ -1,30 +1,23 @@
 # test-01
 
-`test-01` is the backend repository for the cross-repository test environment.
-It provides a small Express REST API backed exclusively by deterministic,
-static fixtures. Its role is to expose the server-side contract that other
-repositories can consume.
-
-## Stacked PR demo
-
-This section is the foundation of a two-layer stacked pull request example.
-The follow-up layer extends this section from a branch that depends on the
-foundation, making the review order visible in GitHub.
-
-## Stack auto-close experiment
-
-Base Task layer for the controlled automatic-closure experiment.
-Child Task layer extending the base branch for the same stack experiment.
+`test-01` is a small Node.js demo API used to exercise repository and delivery
+skills. It serves deterministic, static fixtures through a read-only Express
+API.
 
 There is intentionally no database, persistence, or write operation: the API
 currently exposes GET endpoints only.
 
-## Run
+## Development
 
 ```bash
 npm install
+npm run build
+npm test
 npm start
 ```
+
+`npm run build` performs syntax checks for every source file. There is no
+compilation step because the server runs directly on Node.js.
 
 Available endpoints:
 
