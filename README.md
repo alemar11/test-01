@@ -27,9 +27,10 @@ Available endpoints:
 - `GET /api/items/:id`
 
 Item reads are served through a read-only repository boundary over the frozen,
-ordered static fixtures. `GET /api/items` without query parameters returns the
-full collection as `{ "data": [...] }`. `GET /api/items/:id` uses an exact
-string ID match and returns the matching fixture:
+ordered static fixtures. That CommonJS boundary exposes `listItems()` and
+`findItemById(id)`. `GET /api/items` without query parameters returns the full
+collection as `{ "data": [...] }`. `GET /api/items/:id` uses an exact string ID
+match and returns the matching fixture:
 
 ```json
 {
