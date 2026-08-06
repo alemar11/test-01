@@ -11,6 +11,11 @@ This section is the foundation of a two-layer stacked pull request example.
 The follow-up layer extends this section from a branch that depends on the
 foundation, making the review order visible in GitHub.
 
+## Stack auto-close experiment
+
+Base Task layer for the controlled automatic-closure experiment.
+Child Task layer extending the base branch for the same stack experiment.
+
 There is intentionally no database, persistence, or write operation: the API
 currently exposes GET endpoints only.
 
@@ -28,9 +33,10 @@ Available endpoints:
 - `GET /api/items/:id`
 
 Item reads are served through a read-only repository boundary over the frozen,
-ordered static fixtures. `GET /api/items` without query parameters returns the
-full collection as `{ "data": [...] }`. `GET /api/items/:id` uses an exact
-string ID match and returns the matching fixture:
+ordered static fixtures. That CommonJS boundary exposes `listItems()` and
+`findItemById(id)`. `GET /api/items` without query parameters returns the full
+collection as `{ "data": [...] }`. `GET /api/items/:id` uses an exact string ID
+match and returns the matching fixture:
 
 ```json
 {

@@ -3,6 +3,7 @@ const { test } = require("node:test");
 
 const packageMetadata = require("../package.json");
 const app = require("../src/app");
+const itemsRepository = require("../src/items-repository");
 
 const expectedItems = [
   { id: "item-1", name: "First item", status: "active" },
@@ -11,6 +12,13 @@ const expectedItems = [
 
 let server;
 let baseUrl;
+
+test("item repository exposes the exact read API", () => {
+  assert.deepEqual(Object.keys(itemsRepository).sort(), [
+    "findItemById",
+    "listItems",
+  ]);
+});
 
 function startServer() {
   return new Promise((resolve, reject) => {

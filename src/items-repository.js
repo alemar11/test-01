@@ -1,6 +1,6 @@
 const { items } = require("./data");
 
-function getItems(filters = {}) {
+function listItems(filters = {}) {
   const normalizedQuery = filters.q?.trim().toLowerCase();
 
   return items.filter(
@@ -11,8 +11,8 @@ function getItems(filters = {}) {
   );
 }
 
-function getItemById(id) {
+function findItemById(id) {
   return items.find((item) => item.id === id);
 }
 
-module.exports = { getItems, getItemById };
+module.exports = { listItems, findItemById };
