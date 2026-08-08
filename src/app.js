@@ -1,6 +1,7 @@
 const express = require("express");
 
 const { name, version } = require("../package.json");
+const { sendValidatedJson } = require("./http-cache");
 const { summarizeItems } = require("./item-summary");
 const { findItemById, listItems } = require("./items-repository");
 
@@ -24,6 +25,7 @@ const supportedItemSortOrders = new Set(["asc", "desc"]);
 const supportedSummaryQueryParameters = new Set(["status", "category", "q"]);
 
 app.disable("x-powered-by");
+app.disable("etag");
 
 function invalidQuery(response) {
   response.status(400).json({
@@ -68,15 +70,15 @@ function parseItemFilters(query, supportedParameters) {
   return { status, category, q };
 }
 
-app.get("/health", (_request, response) => {
-  response.json(health);
+app.get("/health", (request, response) => {
+  sendValidatedJson(request, response, health);
 });
 
 app.get("/api/items", (request, response) => {
   const queryKeys = Object.keys(request.query);
 
   if (queryKeys.length === 0) {
-    response.json({ data: listItems() });
+    sendValidatedJson(request, response, { data: listItems() });
     return;
   }
 
@@ -120,7 +122,7 @@ app.get("/api/items", (request, response) => {
   const total = discoveredItems.length;
   const start = (page - 1) * limit;
 
-  response.json({
+  sendValidatedJson(request, response, {
     data: discoveredItems.slice(start, start + limit),
     pagination: {
       page,
@@ -151,7 +153,7 @@ app.get("/api/items/summary", (request, response) => {
   const matchingItems = listItems(normalizedFilters);
   const summary = summarizeItems(matchingItems);
 
-  response.json({
+  sendValidatedJson(request, response, {
     data: summary,
     insights: {
       total: allItems.length,
@@ -175,7 +177,7 @@ app.get("/api/items/:id", (request, response) => {
     return;
   }
 
-  response.json({ data: item });
+  sendValidatedJson(request, response, { data: item });
 });
 
 app.use((_request, response) => {

@@ -223,4 +223,23 @@ sorting and pagination are unsupported. Unknown, repeated, structured, or
 blank inputs return the shared HTTP 400 `invalid_query` response without
 changing later health, collection, detail, or summary reads.
 
+## HTTP cache validators
+
+Every successful HTTP 200 representation from `GET /health`, `GET /api/items`,
+and `GET /api/items/:id` includes a strong `ETag` derived from the exact JSON
+representation. This includes query-dependent collection results: unchanged
+representations keep the same validator, while different result bodies use
+different validators.
+
+Clients can send that validator in `If-None-Match`. Exact matches, weak
+validators, validator lists containing a match, and `*` return HTTP 304 with an
+empty body and the current `ETag`; non-matches return the ordinary HTTP 200 JSON
+body and validator. Error responses retain their existing status and JSON
+contracts and are not assigned validators.
+
+The validators are deterministic over the package metadata and frozen fixture
+representations. They add no database, persistence, write path, expiration
+policy, or external cache, and do not cover endpoints beyond the three baseline
+GET surfaces listed above.
+
 Run the backend tests with `npm test`.
