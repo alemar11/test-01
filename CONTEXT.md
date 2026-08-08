@@ -15,8 +15,8 @@ small, deterministic, and read-only.
   repository result without introducing another fixture-read boundary.
 - `GET /api/items/summary` aggregates the complete `listItems()` result after
   collection-equivalent status, category, and name-search filtering. It reports
-  a total plus represented-value status and category maps and does not accept
-  pagination.
+  matching-set status and category maps plus query-aware global, matching, and
+  normalized-filter insights, and does not accept sorting or pagination.
 - The API exposes GET-only health, item, and item-summary reads. It has no
   database, persistence, or write operation.
 - `npm run build` checks source syntax; `npm test` verifies the HTTP contract.

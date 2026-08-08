@@ -144,6 +144,33 @@ function assertValidEtag(result) {
   return etag;
 }
 
+function expectedQuery(overrides = {}) {
+  return {
+    status: null,
+    category: null,
+    q: null,
+    sort: null,
+    order: null,
+    page: 1,
+    limit: 20,
+    ...overrides,
+  };
+}
+
+function expectedInsights(overrides = {}) {
+  return {
+    total: 2,
+    matching: 2,
+    byStatus: { active: 2 },
+    filters: { status: null, category: null, q: null },
+    ...overrides,
+  };
+}
+
+function expectedSummaryResponse({ data = expectedSummary, insights = {} } = {}) {
+  return { data, insights: expectedInsights(insights) };
+}
+
 test("GET /health returns deterministic operational diagnostics", async () => {
   const firstResult = await get("/health");
   const secondResult = await get("/health");
@@ -185,9 +212,9 @@ test("GET /api/items/summary returns deterministic full-set counts", async () =>
 
   assert.equal(firstResult.status, 200);
   assert.equal(secondResult.status, 200);
-  assert.deepEqual(firstResult.body, { data: expectedSummary });
+  assert.deepEqual(firstResult.body, expectedSummaryResponse());
   assert.deepEqual(secondResult.body, firstResult.body);
-  assert.deepEqual(Object.keys(firstResult.body), ["data"]);
+  assert.deepEqual(Object.keys(firstResult.body), ["data", "insights"]);
   assert.deepEqual(Object.keys(firstResult.body.data), [
     "total",
     "byStatus",
@@ -217,6 +244,11 @@ test("GET /api/items/summary composes collection-equivalent filters", async () =
       byStatus: { active: 1 },
       byCategory: { "core-service": 1 },
     },
+    insights: expectedInsights({
+      matching: 1,
+      byStatus: { active: 1 },
+      filters: { status: "active", category: "core-service", q: "first" },
+    }),
   });
 });
 
@@ -228,8 +260,20 @@ test("GET /api/items/summary preserves exact status and category matching", asyn
 
   assert.deepEqual(paddedStatus.body, {
     data: { total: 0, byStatus: {}, byCategory: {} },
+    insights: expectedInsights({
+      matching: 0,
+      byStatus: {},
+      filters: { status: " active ", category: null, q: null },
+    }),
   });
-  assert.deepEqual(differentCategoryCase.body, paddedStatus.body);
+  assert.deepEqual(differentCategoryCase.body, {
+    data: { total: 0, byStatus: {}, byCategory: {} },
+    insights: expectedInsights({
+      matching: 0,
+      byStatus: {},
+      filters: { status: null, category: "CORE-SERVICE", q: null },
+    }),
+  });
 });
 
 test("GET /api/items/summary returns empty maps for zero matches", async () => {
@@ -238,6 +282,11 @@ test("GET /api/items/summary returns empty maps for zero matches", async () => {
   assert.equal(result.status, 200);
   assert.deepEqual(result.body, {
     data: { total: 0, byStatus: {}, byCategory: {} },
+    insights: expectedInsights({
+      matching: 0,
+      byStatus: {},
+      filters: { status: null, category: null, q: "missing" },
+    }),
   });
 });
 
@@ -274,7 +323,12 @@ test("summary totals are independent of collection pagination", async () => {
   assert.equal(secondPage.body.data.length, 1);
   assert.equal(firstPage.body.pagination.total, 2);
   assert.equal(secondPage.body.pagination.total, 2);
-  assert.deepEqual(summary.body, { data: expectedSummary });
+  assert.deepEqual(
+    summary.body,
+    expectedSummaryResponse({
+      insights: { filters: { status: null, category: null, q: "item" } },
+    }),
+  );
 });
 
 test("GET /api/items applies exact status filtering", async () => {
@@ -285,14 +339,17 @@ test("GET /api/items applies exact status filtering", async () => {
   assert.deepEqual(matching.body, {
     data: expectedItems,
     pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
+    query: expectedQuery({ status: "active" }),
   });
   assert.deepEqual(missing.body, {
     data: [],
     pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    query: expectedQuery({ status: "inactive" }),
   });
   assert.deepEqual(padded.body, {
     data: [],
     pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    query: expectedQuery({ status: " active " }),
   });
 });
 
@@ -303,6 +360,27 @@ test("GET /api/items trims and case-folds name searches", async () => {
   assert.deepEqual(result.body, {
     data: [expectedItems[1]],
     pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
+    query: expectedQuery({ q: "second" }),
+  });
+});
+
+test("GET /api/items filters and searches before sorting and pagination", async () => {
+  const result = await get(
+    "/api/items?status=active&q=item&sort=name&order=desc&page=2&limit=1",
+  );
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: [expectedItems[0]],
+    pagination: { page: 2, limit: 1, total: 2, totalPages: 2 },
+    query: expectedQuery({
+      status: "active",
+      q: "item",
+      sort: "name",
+      order: "desc",
+      page: 2,
+      limit: 1,
+    }),
   });
 });
 
@@ -314,14 +392,17 @@ test("GET /api/items applies exact category filtering", async () => {
   assert.deepEqual(matching.body, {
     data: [expectedItems[0]],
     pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
+    query: expectedQuery({ category: "core-service" }),
   });
   assert.deepEqual(differentCase.body, {
     data: [],
     pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    query: expectedQuery({ category: "CORE-SERVICE" }),
   });
   assert.deepEqual(missing.body, {
     data: [],
     pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    query: expectedQuery({ category: "missing-category" }),
   });
 });
 
@@ -336,10 +417,23 @@ test("GET /api/items composes category, status, and search before pagination", a
   assert.deepEqual(firstPage.body, {
     data: [expectedItems[0]],
     pagination: { page: 1, limit: 1, total: 1, totalPages: 1 },
+    query: expectedQuery({
+      status: "active",
+      category: "core-service",
+      q: "first",
+      limit: 1,
+    }),
   });
   assert.deepEqual(outOfRange.body, {
     data: [],
     pagination: { page: 2, limit: 1, total: 1, totalPages: 1 },
+    query: expectedQuery({
+      status: "active",
+      category: "core-service",
+      q: "first",
+      page: 2,
+      limit: 1,
+    }),
   });
 });
 
@@ -350,7 +444,38 @@ test("GET /api/items combines filters before pagination in fixture order", async
   assert.deepEqual(result.body, {
     data: [expectedItems[1]],
     pagination: { page: 2, limit: 1, total: 2, totalPages: 2 },
+    query: expectedQuery({
+      status: "active",
+      q: "item",
+      page: 2,
+      limit: 1,
+    }),
   });
+});
+
+test("GET /api/items defaults explicit sorting to ascending", async () => {
+  const result = await get("/api/items?sort=name");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: expectedItems,
+    pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
+    query: expectedQuery({ sort: "name", order: "asc" }),
+  });
+});
+
+test("GET /api/items sorts each supported field deterministically", async () => {
+  const byId = await get("/api/items?sort=id&order=desc");
+  const byName = await get("/api/items?sort=name&order=desc");
+  const byStatus = await get("/api/items?sort=status&order=desc");
+
+  assert.deepEqual(byId.body.data, [expectedItems[1], expectedItems[0]]);
+  assert.deepEqual(byName.body.data, [expectedItems[1], expectedItems[0]]);
+  assert.deepEqual(
+    byStatus.body.data,
+    expectedItems,
+    "equal status values use ascending item IDs as the tie-breaker",
+  );
 });
 
 test("GET /api/items uses queried pagination defaults", async () => {
@@ -372,6 +497,7 @@ test("GET /api/items returns truthful out-of-range metadata", async () => {
   assert.deepEqual(result.body, {
     data: [],
     pagination: { page: 3, limit: 1, total: 2, totalPages: 2 },
+    query: expectedQuery({ page: 3, limit: 1 }),
   });
 });
 
@@ -394,9 +520,13 @@ for (const query of [
   "q=first&q=second",
   "page=1&page=2",
   "limit=1&limit=2",
+  "sort=id&sort=name",
+  "order=asc&order=desc",
   "status[mode]=active",
   "category[mode]=core-service",
   "q[]=item",
+  "sort[]=id",
+  "order[direction]=asc",
   "category[]=core-service",
   "status=",
   "status=%20%20",
@@ -404,6 +534,13 @@ for (const query of [
   "category=%20%20",
   "q=",
   "q=%20%20",
+  "sort=",
+  "sort=%20id",
+  "sort=createdAt",
+  "order=",
+  "order=ASC",
+  "order=sideways",
+  "order=asc",
   "page=",
   "page=%201",
   "page=0",
@@ -433,6 +570,8 @@ for (const query of [
 
 for (const query of [
   "unknown=value",
+  "sort=name",
+  "order=desc",
   "page=1",
   "limit=20",
   "status=active&status=inactive",
@@ -462,7 +601,7 @@ for (const query of [
 }
 
 test("an invalid query does not affect later item reads", async () => {
-  const invalidResult = await get("/api/items?limit=101");
+  const invalidResult = await get("/api/items?sort=unknown");
   const collectionResult = await get("/api/items");
   const detailResult = await get("/api/items/item-1");
 
@@ -471,18 +610,148 @@ test("an invalid query does not affect later item reads", async () => {
   assert.deepEqual(detailResult.body, { data: expectedItems[0] });
 });
 
+test("repeating a discovery query returns identical ordered data and metadata", async () => {
+  const path = "/api/items?q=%20ITEM%20&sort=name&order=desc&page=1&limit=1";
+  const firstResult = await get(path);
+  const secondResult = await get(path);
+
+  assert.equal(firstResult.status, 200);
+  assert.deepEqual(firstResult.body, {
+    data: [expectedItems[1]],
+    pagination: { page: 1, limit: 1, total: 2, totalPages: 2 },
+    query: expectedQuery({
+      q: "item",
+      sort: "name",
+      order: "desc",
+      limit: 1,
+    }),
+  });
+  assert.deepEqual(secondResult.body, firstResult.body);
+});
+
+test("GET /api/items/summary reports the complete fixture aggregate", async () => {
+  const result = await get("/api/items/summary");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, expectedSummaryResponse());
+  assert.deepEqual(Object.keys(result.body.insights), [
+    "total",
+    "matching",
+    "byStatus",
+    "filters",
+  ]);
+});
+
+test("GET /api/items/summary reuses normalized search semantics", async () => {
+  const result = await get("/api/items/summary?q=%20FIRST%20");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(
+    result.body,
+    expectedSummaryResponse({
+      data: {
+        total: 1,
+        byStatus: { active: 1 },
+        byCategory: { "core-service": 1 },
+      },
+      insights: {
+        matching: 1,
+        byStatus: { active: 1 },
+        filters: { status: null, category: null, q: "first" },
+      },
+    }),
+  );
+});
+
+test("GET /api/items/summary reuses exact status semantics", async () => {
+  const matching = await get("/api/items/summary?status=active");
+  const padded = await get("/api/items/summary?status=%20active%20");
+
+  assert.deepEqual(
+    matching.body,
+    expectedSummaryResponse({
+      insights: {
+        filters: { status: "active", category: null, q: null },
+      },
+    }),
+  );
+  assert.deepEqual(
+    padded.body,
+    expectedSummaryResponse({
+      data: { total: 0, byStatus: {}, byCategory: {} },
+      insights: {
+        matching: 0,
+        byStatus: {},
+        filters: { status: " active ", category: null, q: null },
+      },
+    }),
+  );
+});
+
+test("GET /api/items/summary combines filters over the full matching set", async () => {
+  const matching = await get(
+    "/api/items/summary?status=active&q=%20SECOND%20",
+  );
+  const empty = await get("/api/items/summary?status=inactive&q=item");
+
+  assert.deepEqual(
+    matching.body,
+    expectedSummaryResponse({
+      data: {
+        total: 1,
+        byStatus: { active: 1 },
+        byCategory: { "support-service": 1 },
+      },
+      insights: {
+        matching: 1,
+        byStatus: { active: 1 },
+        filters: { status: "active", category: null, q: "second" },
+      },
+    }),
+  );
+  assert.deepEqual(
+    empty.body,
+    expectedSummaryResponse({
+      data: { total: 0, byStatus: {}, byCategory: {} },
+      insights: {
+        matching: 0,
+        byStatus: {},
+        filters: { status: "inactive", category: null, q: "item" },
+      },
+    }),
+  );
+});
+
 test("an invalid summary query does not affect later reads", async () => {
-  const invalidResult = await get("/api/items/summary?page=1");
-  const healthResult = await get("/health");
+  const invalidResult = await get("/api/items/summary?sort=name");
+  const summaryResult = await get("/api/items/summary");
   const collectionResult = await get("/api/items");
   const detailResult = await get("/api/items/item-1");
-  const summaryResult = await get("/api/items/summary");
+  const healthResult = await get("/health");
 
   assert.equal(invalidResult.status, 400);
-  assert.equal(healthResult.status, 200);
+  assert.deepEqual(summaryResult.body, expectedSummaryResponse());
   assert.deepEqual(collectionResult.body, { data: expectedItems });
   assert.deepEqual(detailResult.body, { data: expectedItems[0] });
-  assert.deepEqual(summaryResult.body, { data: expectedSummary });
+  assert.equal(healthResult.status, 200);
+  assert.equal(healthResult.body.status, "ok");
+});
+
+test("repeating an item summary returns identical aggregates and filters", async () => {
+  const path = "/api/items/summary?status=active&q=%20ITEM%20";
+  const firstResult = await get(path);
+  const secondResult = await get(path);
+
+  assert.equal(firstResult.status, 200);
+  assert.deepEqual(
+    firstResult.body,
+    expectedSummaryResponse({
+      insights: {
+        filters: { status: "active", category: null, q: "item" },
+      },
+    }),
+  );
+  assert.deepEqual(secondResult.body, firstResult.body);
 });
 
 test("GET /api/items/:id returns an exact fixture match", async () => {
@@ -532,6 +801,7 @@ test("different collection and item representations have separate validators", a
   assert.deepEqual(queryMismatch.body, {
     data: [expectedItems[0]],
     pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
+    query: expectedQuery({ q: "first" }),
   });
   assert.equal(itemMismatch.status, 200);
   assert.deepEqual(itemMismatch.body, { data: expectedItems[1] });
