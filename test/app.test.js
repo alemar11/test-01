@@ -3,6 +3,7 @@ const { test } = require("node:test");
 
 const packageMetadata = require("../package.json");
 const app = require("../src/app");
+const { facetItems } = require("../src/item-facets");
 const { summarizeItems } = require("../src/item-summary");
 const itemsRepository = require("../src/items-repository");
 
@@ -26,6 +27,10 @@ const expectedSummary = {
   total: 2,
   byStatus: { active: 2 },
   byCategory: { "core-service": 1, "support-service": 1 },
+};
+const expectedFacets = {
+  total: 2,
+  byLabel: { featured: 1, "read-only": 2, support: 1 },
 };
 
 let server;
@@ -69,6 +74,24 @@ test("item summaries safely count keys inherited by ordinary objects", () => {
       0,
     ),
     summary.total,
+  );
+});
+
+test("item facets safely count every label in deterministic order", () => {
+  const facets = facetItems([
+    { labels: ["constructor", "shared"] },
+    { labels: ["__proto__", "shared"] },
+  ]);
+  const serializedFacets = JSON.parse(JSON.stringify(facets));
+
+  assert.equal(Object.getPrototypeOf(facets.byLabel), null);
+  assert.deepEqual(serializedFacets, {
+    total: 2,
+    byLabel: { constructor: 1, shared: 2, ["__proto__"]: 1 },
+  });
+  assert.equal(
+    Object.values(facets.byLabel).reduce((total, count) => total + count, 0),
+    4,
   );
 });
 
@@ -196,6 +219,19 @@ function expectedSummaryResponse({ data = expectedSummary, insights = {} } = {})
   return { data, insights: expectedInsights(insights) };
 }
 
+function expectedFacetResponse({ data = expectedFacets, filters = {} } = {}) {
+  return {
+    data,
+    filters: {
+      status: null,
+      category: null,
+      label: null,
+      q: null,
+      ...filters,
+    },
+  };
+}
+
 test("GET /health returns deterministic operational diagnostics", async () => {
   const firstResult = await get("/health");
   const secondResult = await get("/health");
@@ -254,6 +290,76 @@ test("GET /api/items/summary returns deterministic full-set counts", async () =>
     Object.values(firstResult.body.data.byCategory).every(
       (count) => Number.isInteger(count) && count >= 0,
     ),
+  );
+});
+
+test("GET /api/items/facets returns deterministic full-set label counts", async () => {
+  const firstResult = await get("/api/items/facets");
+  const secondResult = await get("/api/items/facets");
+
+  assert.equal(firstResult.status, 200);
+  assert.deepEqual(firstResult.body, expectedFacetResponse());
+  assert.deepEqual(secondResult.body, firstResult.body);
+  assert.ok(
+    Object.values(firstResult.body.data.byLabel).reduce(
+      (total, count) => total + count,
+      0,
+    ) > firstResult.body.data.total,
+  );
+});
+
+test("GET /api/items/facets composes exact filters and normalized search", async () => {
+  const result = await get(
+    "/api/items/facets?label=read-only&category=support-service&status=active&q=%20SECOND%20",
+  );
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(
+    result.body,
+    expectedFacetResponse({
+      data: { total: 1, byLabel: { "read-only": 1, support: 1 } },
+      filters: {
+        status: "active",
+        category: "support-service",
+        label: "read-only",
+        q: "second",
+      },
+    }),
+  );
+});
+
+test("GET /api/items/facets returns an empty map for zero matches", async () => {
+  const result = await get("/api/items/facets?label=FEATURED&q=missing");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(
+    result.body,
+    expectedFacetResponse({
+      data: { total: 0, byLabel: {} },
+      filters: { label: "FEATURED", q: "missing" },
+    }),
+  );
+});
+
+test("GET /api/items/facets preserves exact status and category matching", async () => {
+  const paddedStatus = await get("/api/items/facets?status=%20active%20");
+  const differentCategoryCase = await get(
+    "/api/items/facets?category=CORE-SERVICE",
+  );
+
+  assert.deepEqual(
+    paddedStatus.body,
+    expectedFacetResponse({
+      data: { total: 0, byLabel: {} },
+      filters: { status: " active " },
+    }),
+  );
+  assert.deepEqual(
+    differentCategoryCase.body,
+    expectedFacetResponse({
+      data: { total: 0, byLabel: {} },
+      filters: { category: "CORE-SERVICE" },
+    }),
   );
 });
 
@@ -706,6 +812,42 @@ for (const query of [
   });
 }
 
+for (const query of [
+  "unknown=value",
+  "sort=name",
+  "order=desc",
+  "page=1",
+  "limit=20",
+  "status=active&status=inactive",
+  "category=core-service&category=support-service",
+  "label=featured&label=read-only",
+  "q=first&q=second",
+  "status[mode]=active",
+  "category[mode]=core-service",
+  "label[mode]=featured",
+  "q[]=item",
+  "status=",
+  "status=%20%20",
+  "category=",
+  "category=%20%20",
+  "label=",
+  "label=%20%20",
+  "q=",
+  "q=%20%20",
+]) {
+  test(`GET /api/items/facets rejects invalid query: ${query}`, async () => {
+    const result = await get(`/api/items/facets?${query}`);
+
+    assert.equal(result.status, 400);
+    assert.deepEqual(result.body, {
+      error: {
+        code: "invalid_query",
+        message: "Invalid query parameters",
+      },
+    });
+  });
+}
+
 test("an invalid query does not affect later item reads", async () => {
   const invalidResult = await get("/api/items?sort=unknown");
   const collectionResult = await get("/api/items");
@@ -947,6 +1089,7 @@ test("successful baseline GET representations have stable validators", async () 
     "/api/items?q=item",
     "/api/items?label=read-only",
     "/api/items/summary?label=read-only",
+    "/api/items/facets?label=read-only",
     "/api/items/item-1",
   ]) {
     const firstResult = await get(path);
@@ -1012,6 +1155,25 @@ test("label-aware validators are representation-specific", async () => {
     conditionalSummary.headers.get("etag"),
     featuredSummary.headers.get("etag"),
   );
+});
+
+test("facet validators are stable, normalized, and representation-specific", async () => {
+  const featured = await get("/api/items/facets?label=featured");
+  const support = await get("/api/items/facets?label=support");
+  const normalized = await get("/api/items/facets?q=%20ITEM%20");
+  const canonical = await get("/api/items/facets?q=item");
+
+  assert.notEqual(assertValidEtag(featured), assertValidEtag(support));
+  assert.equal(assertValidEtag(normalized), assertValidEtag(canonical));
+  assert.deepEqual(normalized.body, canonical.body);
+
+  const conditional = await request("/api/items/facets?label=featured", {
+    headers: { "If-None-Match": featured.headers.get("etag") },
+  });
+
+  assert.equal(conditional.status, 304);
+  assert.equal(conditional.text, "");
+  assert.equal(conditional.headers.get("etag"), featured.headers.get("etag"));
 });
 
 test("matching validators return an empty 304 with the current validator", async () => {
@@ -1226,6 +1388,7 @@ test("unknown routes return the generic JSON 404 contract", async () => {
 for (const path of [
   "/api/items",
   "/api/items/summary",
+  "/api/items/facets",
   "/api/items/item-1",
 ]) {
   test(`non-GET ${path} retains the generic 404 contract`, async () => {
