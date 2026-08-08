@@ -399,6 +399,43 @@ test(
   },
 );
 
+test("If-None-Match ignores empty list members", async () => {
+  const unconditional = await get("/api/items/item-1");
+  const etag = assertValidEtag(unconditional);
+  const values = [
+    `"unrelated", , ${etag}`,
+    `, ${etag}`,
+    `${etag},`,
+    `, , ${etag}, ,`,
+  ];
+
+  for (const value of values) {
+    const conditional = await request("/api/items/item-1", {
+      headers: {
+        "Cache-Control": "no-cache",
+        "If-None-Match": value,
+      },
+    });
+
+    assert.equal(conditional.status, 304, value);
+    assert.equal(conditional.text, "", value);
+    assert.equal(conditional.headers.get("etag"), etag, value);
+  }
+
+  for (const value of [", *", ",, *"]) {
+    const malformedWildcard = await request("/api/items/item-1", {
+      headers: {
+        "Cache-Control": "no-cache",
+        "If-None-Match": value,
+      },
+    });
+
+    assert.equal(malformedWildcard.status, 200, value);
+    assert.deepEqual(malformedWildcard.body, { data: expectedItems[0] });
+    assert.equal(malformedWildcard.headers.get("etag"), etag, value);
+  }
+});
+
 test("repeated conditional reads stay deterministic", async () => {
   const unconditional = await get("/health");
   const etag = assertValidEtag(unconditional);

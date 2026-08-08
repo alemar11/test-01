@@ -35,6 +35,8 @@ function ifNoneMatchMatches(value, currentEtag) {
     return skipOptionalWhitespace(value, index + 1) === value.length;
   }
 
+  index = skipEmptyListMembers(value, index);
+
   let matches = false;
 
   while (index < value.length) {
@@ -73,10 +75,10 @@ function ifNoneMatchMatches(value, currentEtag) {
       return false;
     }
 
-    index = skipOptionalWhitespace(value, index + 1);
+    index = skipEmptyListMembers(value, index + 1);
   }
 
-  return false;
+  return matches;
 }
 
 function ifMatchMatches(value, currentEtag) {
