@@ -1,5 +1,9 @@
 const LOWER_KEBAB_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const SCALAR_FIELDS = ["name", "status", "category"];
+const REQUIRED_FIELDS = ["id", "name", "status", "category"];
+
+function isValidId(value) {
+  return typeof value === "string" && value.length > 0;
+}
 
 function isValidName(value) {
   return typeof value === "string" && value.length > 0 && value.trim() === value;
@@ -15,7 +19,7 @@ function findDuplicateIdViolations(fixtures) {
   for (let index = 0; index < fixtures.length; index += 1) {
     const fixture = fixtures[index];
 
-    if (typeof fixture?.id !== "string") {
+    if (!isValidId(fixture?.id)) {
       continue;
     }
 
@@ -37,8 +41,9 @@ function findDuplicateIdViolations(fixtures) {
     }));
 }
 
-function findScalarViolations(fixtures) {
+function findRequiredFieldViolations(fixtures) {
   const validators = {
+    id: isValidId,
     name: isValidName,
     status: isValidLowerKebab,
     category: isValidLowerKebab,
@@ -49,7 +54,7 @@ function findScalarViolations(fixtures) {
   for (let index = 0; index < fixtures.length; index += 1) {
     const fixture = fixtures[index];
 
-    for (const field of SCALAR_FIELDS) {
+    for (const field of REQUIRED_FIELDS) {
       if (!validators[field](fixture?.[field])) {
         violations.push({
           code: `invalid_${field}`,
@@ -72,7 +77,7 @@ function createFixtureQualityReport(fixtures) {
     inspected: fixtures.length,
     violations: [
       ...findDuplicateIdViolations(fixtures),
-      ...findScalarViolations(fixtures),
+      ...findRequiredFieldViolations(fixtures),
     ],
   };
 }

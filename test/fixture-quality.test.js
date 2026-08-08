@@ -76,6 +76,7 @@ test("all duplicate IDs and malformed scalar fields are reported in stable order
       { code: "invalid_name", field: "name", index: 3 },
       { code: "invalid_status", field: "status", index: 3 },
       { code: "invalid_category", field: "category", index: 3 },
+      { code: "invalid_id", field: "id", index: 5 },
       { code: "invalid_name", field: "name", index: 5 },
       { code: "invalid_status", field: "status", index: 5 },
       { code: "invalid_category", field: "category", index: 5 },
@@ -90,9 +91,34 @@ test("sparse fixture slots produce deterministic required-field violations", () 
   assert.deepEqual(createFixtureQualityReport(new Array(1)), {
     inspected: 1,
     violations: [
+      { code: "invalid_id", field: "id", index: 0 },
       { code: "invalid_name", field: "name", index: 0 },
       { code: "invalid_status", field: "status", index: 0 },
       { code: "invalid_category", field: "category", index: 0 },
+    ],
+  });
+});
+
+test("missing, null, numeric, and empty IDs are invalid in stable order", () => {
+  const validScalars = {
+    name: "Valid",
+    status: "active",
+    category: "valid-category",
+  };
+  const fixtures = [
+    { ...validScalars },
+    { id: null, ...validScalars },
+    { id: 42, ...validScalars },
+    { id: "", ...validScalars },
+  ];
+
+  assert.deepEqual(createFixtureQualityReport(fixtures), {
+    inspected: 4,
+    violations: [
+      { code: "invalid_id", field: "id", index: 0 },
+      { code: "invalid_id", field: "id", index: 1 },
+      { code: "invalid_id", field: "id", index: 2 },
+      { code: "invalid_id", field: "id", index: 3 },
     ],
   });
 });
