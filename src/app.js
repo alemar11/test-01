@@ -1,6 +1,7 @@
 const express = require("express");
 
 const { name, version } = require("../package.json");
+const { sendValidatedJson } = require("./http-cache");
 const { findItemById, listItems } = require("./items-repository");
 
 const app = express();
@@ -12,6 +13,7 @@ const health = Object.freeze({
 const supportedItemQueryParameters = new Set(["status", "q", "page", "limit"]);
 
 app.disable("x-powered-by");
+app.disable("etag");
 
 function invalidQuery(response) {
   response.status(400).json({
@@ -35,15 +37,15 @@ function parsePositiveInteger(value) {
   return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
 
-app.get("/health", (_request, response) => {
-  response.json(health);
+app.get("/health", (request, response) => {
+  sendValidatedJson(request, response, health);
 });
 
 app.get("/api/items", (request, response) => {
   const queryKeys = Object.keys(request.query);
 
   if (queryKeys.length === 0) {
-    response.json({ data: listItems() });
+    sendValidatedJson(request, response, { data: listItems() });
     return;
   }
 
@@ -75,7 +77,7 @@ app.get("/api/items", (request, response) => {
   const total = filteredItems.length;
   const start = (page - 1) * limit;
 
-  response.json({
+  sendValidatedJson(request, response, {
     data: filteredItems.slice(start, start + limit),
     pagination: {
       page,
@@ -99,7 +101,7 @@ app.get("/api/items/:id", (request, response) => {
     return;
   }
 
-  response.json({ data: item });
+  sendValidatedJson(request, response, { data: item });
 });
 
 app.use((_request, response) => {
