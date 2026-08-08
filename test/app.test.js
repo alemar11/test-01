@@ -6,8 +6,18 @@ const app = require("../src/app");
 const itemsRepository = require("../src/items-repository");
 
 const expectedItems = [
-  { id: "item-1", name: "First item", status: "active" },
-  { id: "item-2", name: "Second item", status: "active" },
+  {
+    id: "item-1",
+    name: "First item",
+    status: "active",
+    category: "core-service",
+  },
+  {
+    id: "item-2",
+    name: "Second item",
+    status: "active",
+    category: "support-service",
+  },
 ];
 
 let server;
@@ -18,6 +28,30 @@ test("item repository exposes the exact read API", () => {
     "findItemById",
     "listItems",
   ]);
+});
+
+test("repository-backed items expose stable immutable categories", () => {
+  const firstRead = itemsRepository.listItems();
+  const secondRead = itemsRepository.listItems();
+
+  assert.deepEqual(firstRead, expectedItems);
+  assert.deepEqual(secondRead, expectedItems);
+  assert.deepEqual(itemsRepository.findItemById("item-1"), expectedItems[0]);
+  assert.deepEqual(
+    itemsRepository.listItems({ category: "support-service" }),
+    [expectedItems[1]],
+  );
+  assert.ok(firstRead.every((item) => Object.isFrozen(item)));
+  assert.equal(new Set(firstRead.map((item) => item.category)).size, 2);
+  assert.ok(
+    firstRead.every((item) =>
+      /^[a-z]+(?:-[a-z]+)*$/.test(item.category),
+    ),
+  );
+  assert.throws(() => {
+    Object.defineProperty(firstRead[0], "category", { value: "changed" });
+  }, TypeError);
+  assert.deepEqual(itemsRepository.listItems(), expectedItems);
 });
 
 function startServer() {
@@ -123,6 +157,43 @@ test("GET /api/items trims and case-folds name searches", async () => {
   });
 });
 
+test("GET /api/items applies exact category filtering", async () => {
+  const matching = await get("/api/items?category=core-service");
+  const differentCase = await get("/api/items?category=CORE-SERVICE");
+  const missing = await get("/api/items?category=missing-category");
+
+  assert.deepEqual(matching.body, {
+    data: [expectedItems[0]],
+    pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
+  });
+  assert.deepEqual(differentCase.body, {
+    data: [],
+    pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+  });
+  assert.deepEqual(missing.body, {
+    data: [],
+    pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+  });
+});
+
+test("GET /api/items composes category, status, and search before pagination", async () => {
+  const firstPage = await get(
+    "/api/items?category=core-service&status=active&q=%20FIRST%20&page=1&limit=1",
+  );
+  const outOfRange = await get(
+    "/api/items?category=core-service&status=active&q=%20FIRST%20&page=2&limit=1",
+  );
+
+  assert.deepEqual(firstPage.body, {
+    data: [expectedItems[0]],
+    pagination: { page: 1, limit: 1, total: 1, totalPages: 1 },
+  });
+  assert.deepEqual(outOfRange.body, {
+    data: [],
+    pagination: { page: 2, limit: 1, total: 1, totalPages: 1 },
+  });
+});
+
 test("GET /api/items combines filters before pagination in fixture order", async () => {
   const result = await get("/api/items?status=active&q=item&page=2&limit=1");
 
@@ -170,13 +241,18 @@ test("GET /api/items accepts the maximum limit", async () => {
 for (const query of [
   "unknown=value",
   "status=active&status=inactive",
+  "category=core-service&category=support-service",
   "q=first&q=second",
   "page=1&page=2",
   "limit=1&limit=2",
   "status[mode]=active",
+  "category[mode]=core-service",
   "q[]=item",
+  "category[]=core-service",
   "status=",
   "status=%20%20",
+  "category=",
+  "category=%20%20",
   "q=",
   "q=%20%20",
   "page=",

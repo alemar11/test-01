@@ -9,7 +9,13 @@ const health = Object.freeze({
   service: Object.freeze({ name, version }),
   checks: Object.freeze({ liveness: "ok", readiness: "ready" }),
 });
-const supportedItemQueryParameters = new Set(["status", "q", "page", "limit"]);
+const supportedItemQueryParameters = new Set([
+  "status",
+  "category",
+  "q",
+  "page",
+  "limit",
+]);
 
 app.disable("x-powered-by");
 
@@ -52,10 +58,12 @@ app.get("/api/items", (request, response) => {
     return;
   }
 
-  const { status, q } = request.query;
+  const { status, category, q } = request.query;
   if (
     (status !== undefined &&
       (typeof status !== "string" || status.trim() === "")) ||
+    (category !== undefined &&
+      (typeof category !== "string" || category.trim() === "")) ||
     (q !== undefined && (typeof q !== "string" || q.trim() === ""))
   ) {
     invalidQuery(response);
@@ -71,7 +79,7 @@ app.get("/api/items", (request, response) => {
 
   const page = parsedPage ?? 1;
   const limit = parsedLimit ?? 20;
-  const filteredItems = listItems({ status, q });
+  const filteredItems = listItems({ status, category, q });
   const total = filteredItems.length;
   const start = (page - 1) * limit;
 

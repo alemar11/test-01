@@ -7,9 +7,10 @@ small, deterministic, and read-only.
 ## Vocabulary and boundaries
 
 - `src/server.js` starts the process; `src/app.js` owns the HTTP application.
-- `src/data.js` contains the frozen static fixtures.
+- `src/data.js` contains the frozen static fixtures, including stable
+  lower-kebab item categories.
 - `src/items-repository.js` is the only read boundary over those fixtures and
-  exposes `listItems()` and `findItemById(id)`.
+  exposes category-aware `listItems()` and `findItemById(id)`.
 - The API exposes GET-only health and item reads. It has no database,
   persistence, or write operation.
 - `npm run build` checks source syntax; `npm test` verifies the HTTP contract.
