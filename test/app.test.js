@@ -325,6 +325,27 @@ test("If-Match failure takes precedence over a matching If-None-Match", async ()
   assert.equal(satisfied.headers.get("etag"), etag);
 });
 
+test("If-Match ignores empty list members", async () => {
+  const unconditional = await get("/api/items/item-1");
+  const etag = assertValidEtag(unconditional);
+  const values = [
+    `, ${etag}`,
+    `${etag},`,
+    `"unrelated", , ${etag}`,
+    `, , ${etag}, ,`,
+  ];
+
+  for (const value of values) {
+    const conditional = await request("/api/items/item-1", {
+      headers: { "If-Match": value },
+    });
+
+    assert.equal(conditional.status, 200, value);
+    assert.deepEqual(conditional.body, { data: expectedItems[0] });
+    assert.equal(conditional.headers.get("etag"), etag);
+  }
+});
+
 test(
   "If-None-Match supports non-matches, lists, weak comparison, and wildcard",
   async () => {

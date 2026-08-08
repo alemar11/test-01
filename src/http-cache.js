@@ -15,6 +15,16 @@ function skipOptionalWhitespace(value, start) {
   return index;
 }
 
+function skipEmptyListMembers(value, start) {
+  let index = skipOptionalWhitespace(value, start);
+
+  while (value[index] === ",") {
+    index = skipOptionalWhitespace(value, index + 1);
+  }
+
+  return index;
+}
+
 function ifNoneMatchMatches(value, currentEtag) {
   if (typeof value !== "string") {
     return false;
@@ -74,7 +84,7 @@ function ifMatchMatches(value, currentEtag) {
     return false;
   }
 
-  let index = skipOptionalWhitespace(value, 0);
+  let index = skipEmptyListMembers(value, 0);
   if (value[index] === "*") {
     return skipOptionalWhitespace(value, index + 1) === value.length;
   }
@@ -118,10 +128,10 @@ function ifMatchMatches(value, currentEtag) {
       return false;
     }
 
-    index = skipOptionalWhitespace(value, index + 1);
+    index = skipEmptyListMembers(value, index + 1);
   }
 
-  return false;
+  return matches;
 }
 
 function sendValidatedJson(request, response, body) {
