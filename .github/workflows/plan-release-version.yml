@@ -1,20 +1,20 @@
-name: Plan release version
+name: Release version (dry run)
 
-run-name: Plan ${{ inputs.operation }} from ${{ github.ref_name }}
+run-name: Dry run · ${{ inputs.operation }} · ${{ github.ref_name }}
 
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Semantic operation; its validity depends on the selected branch
+        description: Select the operation that matches the branch chosen above
         required: true
         type: choice
         options:
-          - patch
-          - minor
-          - major
-          - candidate
-          - final
+          - "Start patch release — default branch → vX.Y.(Z+1)-rc.1"
+          - "Start minor release — default branch → vX.(Y+1).0-rc.1"
+          - "Start major release — default branch → v(X+1).0.0-rc.1"
+          - "Create next RC — release/vX.Y.Z branch → vX.Y.Z-rc.N"
+          - "Finalize release — release/vX.Y.Z branch → vX.Y.Z"
   workflow_call:
     inputs:
       application_mode:
@@ -23,7 +23,7 @@ on:
         default: false
         type: boolean
       operation:
-        description: Semantic operation to resolve
+        description: Internal semantic operation or automatic inference
         required: true
         type: string
       confirmed_tag:
@@ -151,6 +151,13 @@ jobs:
           )
           DEFAULT_OPERATIONS = {"patch", "minor", "major"}
           RELEASE_OPERATIONS = {"candidate", "final"}
+          OPERATION_ALIASES = {
+              "Start patch release — default branch → vX.Y.(Z+1)-rc.1": "patch",
+              "Start minor release — default branch → vX.(Y+1).0-rc.1": "minor",
+              "Start major release — default branch → v(X+1).0.0-rc.1": "major",
+              "Create next RC — release/vX.Y.Z branch → vX.Y.Z-rc.N": "candidate",
+              "Finalize release — release/vX.Y.Z branch → vX.Y.Z": "final",
+          }
 
 
           @dataclass(frozen=True)
@@ -247,6 +254,52 @@ jobs:
               return tag.version.tag if tag.canonical else tag.raw
 
 
+          def infer_operation(
+              *,
+              ref_name: str,
+              default_branch: str,
+              raw_tags: Iterable[str],
+              confirmed_tag: str,
+          ) -> str:
+              tags, _ = parse_tags(raw_tags)
+              proposals: dict[str, str]
+
+              if ref_name == default_branch:
+                  if not tags:
+                      return "auto"
+                  current = latest_tag(tags)
+                  major, minor, patch = current.version.base
+                  bases = {
+                      "patch": (major, minor, patch + 1),
+                      "minor": (major, minor + 1, 0),
+                      "major": (major + 1, 0, 0),
+                  }
+                  proposals = {
+                      operation: base_tag(base, next_rc_for_base(tags, base))
+                      for operation, base in bases.items()
+                  }
+              else:
+                  match = RELEASE_BRANCH_PATTERN.fullmatch(ref_name)
+                  if match is None:
+                      return "auto"
+                  base = (
+                      int(match.group("major")),
+                      int(match.group("minor")),
+                      int(match.group("patch")),
+                  )
+                  proposals = {
+                      "candidate": base_tag(base, next_rc_for_base(tags, base)),
+                      "final": base_tag(base),
+                  }
+
+              matches = [
+                  operation
+                  for operation, proposal in proposals.items()
+                  if proposal == confirmed_tag
+              ]
+              return matches[0] if len(matches) == 1 else "auto"
+
+
           def blocked(
               *,
               status: str,
@@ -297,6 +350,29 @@ jobs:
 
               if ref_name == default_branch:
                   context = "default"
+                  if operation == "auto":
+                      if not tags:
+                          return blocked(
+                              status="blocked-missing-baseline",
+                              reason=(
+                                  "no SemVer baseline exists; initialize it explicitly before "
+                                  "using this Action"
+                              ),
+                              confirmed_tag=confirmed_tag,
+                              context=context,
+                              ignored=ignored,
+                          )
+                      return blocked(
+                          status="blocked-confirmation-mismatch",
+                          reason=(
+                              "the confirmed tag does not match the current patch, minor, "
+                              "or major proposal"
+                          ),
+                          confirmed_tag=confirmed_tag,
+                          context=context,
+                          latest=latest,
+                          ignored=ignored,
+                      )
                   if operation not in DEFAULT_OPERATIONS:
                       return blocked(
                           status="blocked-context-operation",
@@ -368,6 +444,19 @@ jobs:
                           ignored=ignored,
                       )
                   context = "release"
+                  if operation == "auto":
+                      return blocked(
+                          status="blocked-confirmation-mismatch",
+                          reason=(
+                              "the confirmed tag does not match the next candidate or final "
+                              "proposal for this release branch"
+                          ),
+                          confirmed_tag=confirmed_tag,
+                          context=context,
+                          release_branch=ref_name,
+                          latest=latest,
+                          ignored=ignored,
+                      )
                   if operation not in RELEASE_OPERATIONS:
                       return blocked(
                           status="blocked-context-operation",
@@ -464,7 +553,8 @@ jobs:
 
           ref_name = os.environ["REF_NAME"]
           default_branch = os.environ["DEFAULT_BRANCH"]
-          operation = os.environ["OPERATION"]
+          requested_operation = os.environ["OPERATION"]
+          operation = OPERATION_ALIASES.get(requested_operation, requested_operation)
           application_mode = os.environ["APPLICATION_MODE"] == "true"
           confirmed_tag = os.environ.get("CONFIRMED_TAG") if application_mode else None
           raw_tags = [
@@ -472,6 +562,13 @@ jobs:
               for line in Path(os.environ["TAGS_FILE"]).read_text(encoding="utf-8").splitlines()
               if line
           ]
+          if application_mode and operation == "auto" and confirmed_tag is not None:
+              operation = infer_operation(
+                  ref_name=ref_name,
+                  default_branch=default_branch,
+                  raw_tags=raw_tags,
+                  confirmed_tag=confirmed_tag,
+              )
           result = resolve(
               ref_name=ref_name,
               default_branch=default_branch,
@@ -528,7 +625,7 @@ jobs:
               lines.extend(
                   [
                       "",
-                      "Run **Apply release version** from the same ref and enter the exact "
+                      "Run **Release version** from the same ref and enter the exact "
                       "resolved tag to confirm it.",
                   ]
               )
