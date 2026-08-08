@@ -84,10 +84,12 @@ function ifMatchMatches(value, currentEtag) {
     return false;
   }
 
-  let index = skipEmptyListMembers(value, 0);
+  let index = skipOptionalWhitespace(value, 0);
   if (value[index] === "*") {
     return skipOptionalWhitespace(value, index + 1) === value.length;
   }
+
+  index = skipEmptyListMembers(value, index);
 
   let matches = false;
 

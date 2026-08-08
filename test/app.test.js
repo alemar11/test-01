@@ -344,6 +344,16 @@ test("If-Match ignores empty list members", async () => {
     assert.deepEqual(conditional.body, { data: expectedItems[0] });
     assert.equal(conditional.headers.get("etag"), etag);
   }
+
+  for (const value of [", *", ",, *"]) {
+    const malformedWildcard = await request("/api/items/item-1", {
+      headers: { "If-Match": value },
+    });
+
+    assert.equal(malformedWildcard.status, 412, value);
+    assert.equal(malformedWildcard.text, "", value);
+    assert.equal(malformedWildcard.headers.get("etag"), etag, value);
+  }
 });
 
 test(
