@@ -16,6 +16,7 @@ const supportedItemQueryParameters = new Set([
   "page",
   "limit",
 ]);
+const supportedSummaryQueryParameters = new Set(["status", "category", "q"]);
 
 app.disable("x-powered-by");
 
@@ -41,6 +42,43 @@ function parsePositiveInteger(value) {
   return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
 
+function parseItemFilters(query, supportedParameters) {
+  const queryKeys = Object.keys(query);
+
+  if (queryKeys.some((key) => !supportedParameters.has(key))) {
+    return null;
+  }
+
+  const { status, category, q } = query;
+  if (
+    (status !== undefined &&
+      (typeof status !== "string" || status.trim() === "")) ||
+    (category !== undefined &&
+      (typeof category !== "string" || category.trim() === "")) ||
+    (q !== undefined && (typeof q !== "string" || q.trim() === ""))
+  ) {
+    return null;
+  }
+
+  return { status, category, q };
+}
+
+function summarizeItems(items) {
+  const byStatus = {};
+  const byCategory = {};
+
+  for (const item of items) {
+    byStatus[item.status] = (byStatus[item.status] ?? 0) + 1;
+    byCategory[item.category] = (byCategory[item.category] ?? 0) + 1;
+  }
+
+  return {
+    total: items.length,
+    byStatus,
+    byCategory,
+  };
+}
+
 app.get("/health", (_request, response) => {
   response.json(health);
 });
@@ -53,19 +91,11 @@ app.get("/api/items", (request, response) => {
     return;
   }
 
-  if (queryKeys.some((key) => !supportedItemQueryParameters.has(key))) {
-    invalidQuery(response);
-    return;
-  }
-
-  const { status, category, q } = request.query;
-  if (
-    (status !== undefined &&
-      (typeof status !== "string" || status.trim() === "")) ||
-    (category !== undefined &&
-      (typeof category !== "string" || category.trim() === "")) ||
-    (q !== undefined && (typeof q !== "string" || q.trim() === ""))
-  ) {
+  const filters = parseItemFilters(
+    request.query,
+    supportedItemQueryParameters,
+  );
+  if (filters === null) {
     invalidQuery(response);
     return;
   }
@@ -79,7 +109,7 @@ app.get("/api/items", (request, response) => {
 
   const page = parsedPage ?? 1;
   const limit = parsedLimit ?? 20;
-  const filteredItems = listItems({ status, category, q });
+  const filteredItems = listItems(filters);
   const total = filteredItems.length;
   const start = (page - 1) * limit;
 
@@ -92,6 +122,19 @@ app.get("/api/items", (request, response) => {
       totalPages: Math.ceil(total / limit),
     },
   });
+});
+
+app.get("/api/items/summary", (request, response) => {
+  const filters = parseItemFilters(
+    request.query,
+    supportedSummaryQueryParameters,
+  );
+  if (filters === null) {
+    invalidQuery(response);
+    return;
+  }
+
+  response.json({ data: summarizeItems(listItems(filters)) });
 });
 
 app.get("/api/items/:id", (request, response) => {

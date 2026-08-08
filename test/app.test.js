@@ -19,6 +19,11 @@ const expectedItems = [
     category: "support-service",
   },
 ];
+const expectedSummary = {
+  total: 2,
+  byStatus: { active: 2 },
+  byCategory: { "core-service": 1, "support-service": 1 },
+};
 
 let server;
 let baseUrl;
@@ -126,6 +131,104 @@ test("GET /api/items preserves the exact no-query response", async () => {
   assert.equal(result.status, 200);
   assert.deepEqual(result.body, { data: expectedItems });
   assert.deepEqual(Object.keys(result.body), ["data"]);
+});
+
+test("GET /api/items/summary returns deterministic full-set counts", async () => {
+  const firstResult = await get("/api/items/summary");
+  const secondResult = await get("/api/items/summary");
+
+  assert.equal(firstResult.status, 200);
+  assert.equal(secondResult.status, 200);
+  assert.deepEqual(firstResult.body, { data: expectedSummary });
+  assert.deepEqual(secondResult.body, firstResult.body);
+  assert.deepEqual(Object.keys(firstResult.body), ["data"]);
+  assert.deepEqual(Object.keys(firstResult.body.data), [
+    "total",
+    "byStatus",
+    "byCategory",
+  ]);
+  assert.ok(
+    Object.values(firstResult.body.data.byStatus).every(
+      (count) => Number.isInteger(count) && count >= 0,
+    ),
+  );
+  assert.ok(
+    Object.values(firstResult.body.data.byCategory).every(
+      (count) => Number.isInteger(count) && count >= 0,
+    ),
+  );
+});
+
+test("GET /api/items/summary composes collection-equivalent filters", async () => {
+  const result = await get(
+    "/api/items/summary?category=core-service&status=active&q=%20FIRST%20",
+  );
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: {
+      total: 1,
+      byStatus: { active: 1 },
+      byCategory: { "core-service": 1 },
+    },
+  });
+});
+
+test("GET /api/items/summary preserves exact status and category matching", async () => {
+  const paddedStatus = await get("/api/items/summary?status=%20active%20");
+  const differentCategoryCase = await get(
+    "/api/items/summary?category=CORE-SERVICE",
+  );
+
+  assert.deepEqual(paddedStatus.body, {
+    data: { total: 0, byStatus: {}, byCategory: {} },
+  });
+  assert.deepEqual(differentCategoryCase.body, paddedStatus.body);
+});
+
+test("GET /api/items/summary returns empty maps for zero matches", async () => {
+  const result = await get("/api/items/summary?q=missing");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: { total: 0, byStatus: {}, byCategory: {} },
+  });
+});
+
+test("summary grouping sums equal the complete filtered total", async () => {
+  for (const path of [
+    "/api/items/summary",
+    "/api/items/summary?status=active",
+    "/api/items/summary?category=support-service&q=second",
+    "/api/items/summary?q=missing",
+  ]) {
+    const result = await get(path);
+    const { total, byStatus, byCategory } = result.body.data;
+    const statusTotal = Object.values(byStatus).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+    const categoryTotal = Object.values(byCategory).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+
+    assert.equal(result.status, 200);
+    assert.equal(statusTotal, total);
+    assert.equal(categoryTotal, total);
+  }
+});
+
+test("summary totals are independent of collection pagination", async () => {
+  const firstPage = await get("/api/items?q=item&page=1&limit=1");
+  const secondPage = await get("/api/items?q=item&page=2&limit=1");
+  const summary = await get("/api/items/summary?q=item");
+
+  assert.equal(firstPage.body.data.length, 1);
+  assert.equal(secondPage.body.data.length, 1);
+  assert.equal(firstPage.body.pagination.total, 2);
+  assert.equal(secondPage.body.pagination.total, 2);
+  assert.deepEqual(summary.body, { data: expectedSummary });
 });
 
 test("GET /api/items applies exact status filtering", async () => {
@@ -282,6 +385,36 @@ for (const query of [
   });
 }
 
+for (const query of [
+  "unknown=value",
+  "page=1",
+  "limit=20",
+  "status=active&status=inactive",
+  "category=core-service&category=support-service",
+  "q=first&q=second",
+  "status[mode]=active",
+  "category[mode]=core-service",
+  "q[]=item",
+  "status=",
+  "status=%20%20",
+  "category=",
+  "category=%20%20",
+  "q=",
+  "q=%20%20",
+]) {
+  test(`GET /api/items/summary rejects invalid query: ${query}`, async () => {
+    const result = await get(`/api/items/summary?${query}`);
+
+    assert.equal(result.status, 400);
+    assert.deepEqual(result.body, {
+      error: {
+        code: "invalid_query",
+        message: "Invalid query parameters",
+      },
+    });
+  });
+}
+
 test("an invalid query does not affect later item reads", async () => {
   const invalidResult = await get("/api/items?limit=101");
   const collectionResult = await get("/api/items");
@@ -290,6 +423,20 @@ test("an invalid query does not affect later item reads", async () => {
   assert.equal(invalidResult.status, 400);
   assert.deepEqual(collectionResult.body, { data: expectedItems });
   assert.deepEqual(detailResult.body, { data: expectedItems[0] });
+});
+
+test("an invalid summary query does not affect later reads", async () => {
+  const invalidResult = await get("/api/items/summary?page=1");
+  const healthResult = await get("/health");
+  const collectionResult = await get("/api/items");
+  const detailResult = await get("/api/items/item-1");
+  const summaryResult = await get("/api/items/summary");
+
+  assert.equal(invalidResult.status, 400);
+  assert.equal(healthResult.status, 200);
+  assert.deepEqual(collectionResult.body, { data: expectedItems });
+  assert.deepEqual(detailResult.body, { data: expectedItems[0] });
+  assert.deepEqual(summaryResult.body, { data: expectedSummary });
 });
 
 test("GET /api/items/:id returns an exact fixture match", async () => {
@@ -335,7 +482,11 @@ test("unknown routes return the generic JSON 404 contract", async () => {
   });
 });
 
-for (const path of ["/api/items", "/api/items/item-1"]) {
+for (const path of [
+  "/api/items",
+  "/api/items/summary",
+  "/api/items/item-1",
+]) {
   test(`non-GET ${path} retains the generic 404 contract`, async () => {
     const result = await request(path, { method: "POST" });
 

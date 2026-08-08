@@ -23,6 +23,7 @@ Available endpoints:
 
 - `GET /health`
 - `GET /api/items`
+- `GET /api/items/summary`
 - `GET /api/items/:id`
 
 Item reads are served through a read-only repository boundary over the frozen,
@@ -157,5 +158,53 @@ case-sensitive; `q` alone is trimmed and case-insensitive. Item detail, health,
 and collection reads remain GET-only; other methods and unknown routes use the
 generic `not_found` response. Repeated reads are deterministic, and changing a
 decoded response cannot mutate later repository-backed reads.
+
+## Summarize items
+
+`GET /api/items/summary` reports counts for the complete repository-filtered
+item set. It accepts only the same scalar, non-blank `status`, `category`, and
+`q` filters described above. Status and category matches remain exact, while
+`q` is trimmed and matched case-insensitively against item names.
+
+With no filters, the frozen fixtures return:
+
+```json
+{
+  "data": {
+    "total": 2,
+    "byStatus": {
+      "active": 2
+    },
+    "byCategory": {
+      "core-service": 1,
+      "support-service": 1
+    }
+  }
+}
+```
+
+Grouping maps contain only status and category values represented in the
+filtered result. Their counts are deterministic non-negative integers, and the
+sum of either grouping equals `total`. For example,
+`GET /api/items/summary?category=core-service&status=active&q=first` returns a
+total of `1` with only `active` and `core-service` grouping keys. A filter with
+no matches returns:
+
+```json
+{
+  "data": {
+    "total": 0,
+    "byStatus": {},
+    "byCategory": {}
+  }
+}
+```
+
+Summary counts always cover the full filtered set, never one collection page.
+Accordingly, `page` and `limit` are unsupported on this endpoint. Those keys,
+any other unsupported key, and repeated, structured, or blank query values
+return the same HTTP 400 `invalid_query` response used by collection
+validation. Summary reads are GET-only and do not alter later health,
+collection, detail, or summary reads.
 
 Run the backend tests with `npm test`.
