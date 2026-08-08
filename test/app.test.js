@@ -71,6 +71,16 @@ function expectedQuery(overrides = {}) {
   };
 }
 
+function expectedSummary(overrides = {}) {
+  return {
+    total: 2,
+    matching: 2,
+    byStatus: { active: 2 },
+    filters: { status: null, q: null },
+    ...overrides,
+  };
+}
+
 test("GET /health returns deterministic operational diagnostics", async () => {
   const firstResult = await get("/health");
   const secondResult = await get("/health");
@@ -298,6 +308,131 @@ test("repeating a discovery query returns identical ordered data and metadata", 
   assert.deepEqual(secondResult.body, firstResult.body);
 });
 
+test("GET /api/items/summary reports the complete fixture aggregate", async () => {
+  const result = await get("/api/items/summary");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, expectedSummary());
+  assert.deepEqual(Object.keys(result.body), [
+    "total",
+    "matching",
+    "byStatus",
+    "filters",
+  ]);
+});
+
+test("GET /api/items/summary reuses normalized search semantics", async () => {
+  const result = await get("/api/items/summary?q=%20FIRST%20");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(
+    result.body,
+    expectedSummary({
+      matching: 1,
+      byStatus: { active: 1 },
+      filters: { status: null, q: "first" },
+    }),
+  );
+});
+
+test("GET /api/items/summary reuses exact status semantics", async () => {
+  const matching = await get("/api/items/summary?status=active");
+  const padded = await get("/api/items/summary?status=%20active%20");
+
+  assert.deepEqual(
+    matching.body,
+    expectedSummary({ filters: { status: "active", q: null } }),
+  );
+  assert.deepEqual(
+    padded.body,
+    expectedSummary({
+      matching: 0,
+      byStatus: {},
+      filters: { status: " active ", q: null },
+    }),
+  );
+});
+
+test("GET /api/items/summary combines filters over the full matching set", async () => {
+  const matching = await get(
+    "/api/items/summary?status=active&q=%20SECOND%20",
+  );
+  const empty = await get("/api/items/summary?status=inactive&q=item");
+
+  assert.deepEqual(
+    matching.body,
+    expectedSummary({
+      matching: 1,
+      byStatus: { active: 1 },
+      filters: { status: "active", q: "second" },
+    }),
+  );
+  assert.deepEqual(
+    empty.body,
+    expectedSummary({
+      matching: 0,
+      byStatus: {},
+      filters: { status: "inactive", q: "item" },
+    }),
+  );
+});
+
+for (const query of [
+  "unknown=value",
+  "sort=name",
+  "order=desc",
+  "page=1",
+  "limit=1",
+  "status=active&status=inactive",
+  "q=first&q=second",
+  "status[mode]=active",
+  "q[]=item",
+  "status=",
+  "status=%20%20",
+  "q=",
+  "q=%20%20",
+]) {
+  test(`GET /api/items/summary rejects invalid query: ${query}`, async () => {
+    const result = await get(`/api/items/summary?${query}`);
+
+    assert.equal(result.status, 400);
+    assert.deepEqual(result.body, {
+      error: {
+        code: "invalid_query",
+        message: "Invalid query parameters",
+      },
+    });
+  });
+}
+
+test("an invalid summary query does not affect later reads", async () => {
+  const invalidResult = await get("/api/items/summary?sort=name");
+  const summaryResult = await get("/api/items/summary");
+  const collectionResult = await get("/api/items");
+  const detailResult = await get("/api/items/item-1");
+  const healthResult = await get("/health");
+
+  assert.equal(invalidResult.status, 400);
+  assert.deepEqual(summaryResult.body, expectedSummary());
+  assert.deepEqual(collectionResult.body, { data: expectedItems });
+  assert.deepEqual(detailResult.body, { data: expectedItems[0] });
+  assert.equal(healthResult.status, 200);
+  assert.equal(healthResult.body.status, "ok");
+});
+
+test("repeating an item summary returns identical aggregates and filters", async () => {
+  const path = "/api/items/summary?status=active&q=%20ITEM%20";
+  const firstResult = await get(path);
+  const secondResult = await get(path);
+
+  assert.equal(firstResult.status, 200);
+  assert.deepEqual(
+    firstResult.body,
+    expectedSummary({ filters: { status: "active", q: "item" } }),
+  );
+  assert.deepEqual(secondResult.body, firstResult.body);
+});
+
 test("GET /api/items/:id returns an exact fixture match", async () => {
   const result = await get("/api/items/item-1");
 
@@ -341,7 +476,11 @@ test("unknown routes return the generic JSON 404 contract", async () => {
   });
 });
 
-for (const path of ["/api/items", "/api/items/item-1"]) {
+for (const path of [
+  "/api/items",
+  "/api/items/summary",
+  "/api/items/item-1",
+]) {
   test(`non-GET ${path} retains the generic 404 contract`, async () => {
     const result = await request(path, { method: "POST" });
 

@@ -23,6 +23,7 @@ Available endpoints:
 
 - `GET /health`
 - `GET /api/items`
+- `GET /api/items/summary`
 - `GET /api/items/:id`
 
 Item reads are served through a read-only repository boundary over the frozen,
@@ -150,5 +151,36 @@ Query values must be scalar. Structured values are rejected along with
 unsupported or repeated parameters. Item detail, health, and collection reads
 remain GET-only; other methods and unknown routes use the generic `not_found`
 response.
+
+## Summarize items
+
+`GET /api/items/summary` reports deterministic aggregates over the full frozen
+fixture set. It accepts only the same optional scalar `q` and `status` filters
+as collection discovery; search is trimmed and lowercased, while status remains
+an exact match. The response includes the total fixture count, the matching
+count, a status-keyed breakdown for matching items, and normalized filter
+metadata:
+
+```json
+{
+  "total": 2,
+  "matching": 1,
+  "byStatus": {
+    "active": 1
+  },
+  "filters": {
+    "status": "active",
+    "q": "second"
+  }
+}
+```
+
+For example, the response above is produced by
+`GET /api/items/summary?status=active&q=second`. Breakdown keys include only
+statuses present in the matching set and are ordered deterministically. Empty
+matches return `matching: 0` and an empty `byStatus` object. Sorting and
+pagination are unsupported because the summary always describes the complete
+filtered set. Unknown, repeated, structured, or blank inputs return the shared
+HTTP 400 `invalid_query` response without changing later reads.
 
 Run the backend tests with `npm test`.

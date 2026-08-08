@@ -19,6 +19,7 @@ const supportedItemQueryParameters = new Set([
 ]);
 const supportedItemSortFields = new Set(["id", "name", "status"]);
 const supportedItemSortOrders = new Set(["asc", "desc"]);
+const supportedItemSummaryQueryParameters = new Set(["status", "q"]);
 
 app.disable("x-powered-by");
 
@@ -44,6 +45,41 @@ function parsePositiveInteger(value) {
   return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
 
+function parseItemFilters(query, supportedParameters) {
+  const queryKeys = Object.keys(query);
+  if (queryKeys.some((key) => !supportedParameters.has(key))) {
+    return null;
+  }
+
+  const { status, q } = query;
+  if (
+    (status !== undefined &&
+      (typeof status !== "string" || status.trim() === "")) ||
+    (q !== undefined && (typeof q !== "string" || q.trim() === ""))
+  ) {
+    return null;
+  }
+
+  return {
+    status: status ?? null,
+    q: q?.trim().toLowerCase() ?? null,
+  };
+}
+
+function countItemsByStatus(items) {
+  const counts = new Map();
+
+  for (const item of items) {
+    counts.set(item.status, (counts.get(item.status) ?? 0) + 1);
+  }
+
+  return Object.fromEntries(
+    [...counts.entries()].sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0,
+    ),
+  );
+}
+
 app.get("/health", (_request, response) => {
   response.json(health);
 });
@@ -56,16 +92,17 @@ app.get("/api/items", (request, response) => {
     return;
   }
 
-  if (queryKeys.some((key) => !supportedItemQueryParameters.has(key))) {
+  const normalizedFilters = parseItemFilters(
+    request.query,
+    supportedItemQueryParameters,
+  );
+  if (normalizedFilters === null) {
     invalidQuery(response);
     return;
   }
 
-  const { status, q, sort, order } = request.query;
+  const { sort, order } = request.query;
   if (
-    (status !== undefined &&
-      (typeof status !== "string" || status.trim() === "")) ||
-    (q !== undefined && (typeof q !== "string" || q.trim() === "")) ||
     (sort !== undefined &&
       (typeof sort !== "string" || !supportedItemSortFields.has(sort))) ||
     (order !== undefined &&
@@ -87,8 +124,7 @@ app.get("/api/items", (request, response) => {
   const page = parsedPage ?? 1;
   const limit = parsedLimit ?? 20;
   const normalizedQuery = {
-    status: status ?? null,
-    q: q?.trim().toLowerCase() ?? null,
+    ...normalizedFilters,
     sort: sort ?? null,
     order: sort === undefined ? null : (order ?? "asc"),
     page,
@@ -107,6 +143,27 @@ app.get("/api/items", (request, response) => {
       totalPages: Math.ceil(total / limit),
     },
     query: normalizedQuery,
+  });
+});
+
+app.get("/api/items/summary", (request, response) => {
+  const filters = parseItemFilters(
+    request.query,
+    supportedItemSummaryQueryParameters,
+  );
+  if (filters === null) {
+    invalidQuery(response);
+    return;
+  }
+
+  const allItems = listItems();
+  const matchingItems = listItems(filters);
+
+  response.json({
+    total: allItems.length,
+    matching: matchingItems.length,
+    byStatus: countItemsByStatus(matchingItems),
+    filters,
   });
 });
 
