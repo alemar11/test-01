@@ -8,6 +8,9 @@ function listItems(filters = {}) {
       (filters.status === undefined ||
         filters.status === null ||
         item.status === filters.status) &&
+      (filters.category === undefined ||
+        filters.category === null ||
+        item.category === filters.category) &&
       (normalizedQuery === undefined ||
         item.name.toLowerCase().includes(normalizedQuery)),
   );
