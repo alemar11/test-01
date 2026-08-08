@@ -1,6 +1,6 @@
-name: Release version
+name: Release version (apply)
 
-run-name: Release ${{ inputs.confirmed_tag }} from ${{ github.ref_name }}
+run-name: Apply · ${{ inputs.confirmed_tag }} · ${{ github.ref_name }}
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: release-version-${{ github.repository }}-${{ github.ref_name }}
+  group: release-version-apply-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
             | LC_ALL=C sort -u > "$tags_file"
           current_tag_snapshot="$(sha256sum "$tags_file" | cut -d ' ' -f 1)"
           if [[ "$current_tag_snapshot" != "$EXPECTED_TAG_SNAPSHOT" ]]; then
-            echo "The tag set changed after resolution; run the dry run and Release version again." >&2
+            echo "The tag set changed after resolution; run the dry run and Release version (apply) again." >&2
             exit 1
           fi
 
@@ -77,7 +77,7 @@ jobs:
 
           current_default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
           if [[ "$current_default_branch" != "$DEFAULT_BRANCH" ]]; then
-            echo "The default branch changed after resolution; run the dry run and Release version again." >&2
+            echo "The default branch changed after resolution; run the dry run and Release version (apply) again." >&2
             exit 1
           fi
 
@@ -157,7 +157,7 @@ jobs:
             echo "- Release branch: \`$RELEASE_BRANCH\`"
             echo "- Commit: \`$target_sha\`"
             echo
-            echo "No source file or package metadata was read, edited, or committed."
+            echo "No application source or package metadata was read, edited, or committed."
           } >> "$GITHUB_STEP_SUMMARY"
 
   final:
@@ -192,7 +192,7 @@ jobs:
             | LC_ALL=C sort -u > "$tags_file"
           current_tag_snapshot="$(sha256sum "$tags_file" | cut -d ' ' -f 1)"
           if [[ "$current_tag_snapshot" != "$EXPECTED_TAG_SNAPSHOT" ]]; then
-            echo "The tag set changed after resolution; run the dry run and Release version again." >&2
+            echo "The tag set changed after resolution; run the dry run and Release version (apply) again." >&2
             exit 1
           fi
 
@@ -213,7 +213,7 @@ jobs:
 
           current_default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
           if [[ "$current_default_branch" != "$DEFAULT_BRANCH" ]]; then
-            echo "The default branch changed after resolution; run the dry run and Release version again." >&2
+            echo "The default branch changed after resolution; run the dry run and Release version (apply) again." >&2
             exit 1
           fi
 
@@ -341,5 +341,5 @@ jobs:
             echo "- Pull request: $pr_status — $pr_url"
             echo "- Automatic merge: disabled by workflow design"
             echo
-            echo "No source file or package metadata was read, edited, or committed."
+            echo "No application source or package metadata was read, edited, or committed."
           } >> "$GITHUB_STEP_SUMMARY"
