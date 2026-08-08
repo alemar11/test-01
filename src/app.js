@@ -2,6 +2,7 @@ const express = require("express");
 
 const { name, version } = require("../package.json");
 const { sendValidatedJson } = require("./http-cache");
+const { summarizeItems } = require("./item-summary");
 const { findItemById, listItems } = require("./items-repository");
 
 const app = express();
@@ -10,7 +11,14 @@ const health = Object.freeze({
   service: Object.freeze({ name, version }),
   checks: Object.freeze({ liveness: "ok", readiness: "ready" }),
 });
-const supportedItemQueryParameters = new Set(["status", "q", "page", "limit"]);
+const supportedItemQueryParameters = new Set([
+  "status",
+  "category",
+  "q",
+  "page",
+  "limit",
+]);
+const supportedSummaryQueryParameters = new Set(["status", "category", "q"]);
 
 app.disable("x-powered-by");
 app.disable("etag");
@@ -37,6 +45,27 @@ function parsePositiveInteger(value) {
   return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
 
+function parseItemFilters(query, supportedParameters) {
+  const queryKeys = Object.keys(query);
+
+  if (queryKeys.some((key) => !supportedParameters.has(key))) {
+    return null;
+  }
+
+  const { status, category, q } = query;
+  if (
+    (status !== undefined &&
+      (typeof status !== "string" || status.trim() === "")) ||
+    (category !== undefined &&
+      (typeof category !== "string" || category.trim() === "")) ||
+    (q !== undefined && (typeof q !== "string" || q.trim() === ""))
+  ) {
+    return null;
+  }
+
+  return { status, category, q };
+}
+
 app.get("/health", (request, response) => {
   sendValidatedJson(request, response, health);
 });
@@ -49,17 +78,11 @@ app.get("/api/items", (request, response) => {
     return;
   }
 
-  if (queryKeys.some((key) => !supportedItemQueryParameters.has(key))) {
-    invalidQuery(response);
-    return;
-  }
-
-  const { status, q } = request.query;
-  if (
-    (status !== undefined &&
-      (typeof status !== "string" || status.trim() === "")) ||
-    (q !== undefined && (typeof q !== "string" || q.trim() === ""))
-  ) {
+  const filters = parseItemFilters(
+    request.query,
+    supportedItemQueryParameters,
+  );
+  if (filters === null) {
     invalidQuery(response);
     return;
   }
@@ -73,7 +96,7 @@ app.get("/api/items", (request, response) => {
 
   const page = parsedPage ?? 1;
   const limit = parsedLimit ?? 20;
-  const filteredItems = listItems({ status, q });
+  const filteredItems = listItems(filters);
   const total = filteredItems.length;
   const start = (page - 1) * limit;
 
@@ -85,6 +108,21 @@ app.get("/api/items", (request, response) => {
       total,
       totalPages: Math.ceil(total / limit),
     },
+  });
+});
+
+app.get("/api/items/summary", (request, response) => {
+  const filters = parseItemFilters(
+    request.query,
+    supportedSummaryQueryParameters,
+  );
+  if (filters === null) {
+    invalidQuery(response);
+    return;
+  }
+
+  sendValidatedJson(request, response, {
+    data: summarizeItems(listItems(filters)),
   });
 });
 

@@ -23,20 +23,25 @@ Available endpoints:
 
 - `GET /health`
 - `GET /api/items`
+- `GET /api/items/summary`
 - `GET /api/items/:id`
 
 Item reads are served through a read-only repository boundary over the frozen,
 ordered static fixtures. That CommonJS boundary exposes `listItems()` and
-`findItemById(id)`. `GET /api/items` without query parameters returns the full
-collection as `{ "data": [...] }`. `GET /api/items/:id` uses an exact string ID
-match and returns the matching fixture:
+`findItemById(id)`. Every item has a stable, non-empty lower-kebab `category`.
+The additive field is available on collection and detail reads; existing item
+values, response wrappers, and errors are unchanged. `GET /api/items` without
+query parameters returns the full collection as `{ "data": [...] }`.
+`GET /api/items/:id` uses an exact string ID match and returns the matching
+fixture:
 
 ```json
 {
   "data": {
     "id": "item-1",
     "name": "First item",
-    "status": "active"
+    "status": "active",
+    "category": "core-service"
   }
 }
 ```
@@ -83,8 +88,18 @@ parameters keeps the original response shape exactly:
 ```json
 {
   "data": [
-    { "id": "item-1", "name": "First item", "status": "active" },
-    { "id": "item-2", "name": "Second item", "status": "active" }
+    {
+      "id": "item-1",
+      "name": "First item",
+      "status": "active",
+      "category": "core-service"
+    },
+    {
+      "id": "item-2",
+      "name": "Second item",
+      "status": "active",
+      "category": "support-service"
+    }
   ]
 }
 ```
@@ -94,23 +109,31 @@ Queried reads support only these scalar parameters:
 | Parameter | Behavior |
 | --- | --- |
 | `status` | Exact status match; blank values are invalid. |
+| `category` | Exact category match; blank values are invalid. |
 | `q` | Case-insensitive name substring match after trimming; blank values are invalid. |
 | `page` | 1-based page number. Defaults to `1`. |
 | `limit` | Page size. Defaults to `20` and cannot exceed `100`. |
 
-Filters are applied before pagination without changing fixture order. For
-example, `GET /api/items?status=active&q=item&page=2&limit=1` returns:
+All supplied filters compose and are applied before pagination without changing
+fixture order. For example,
+`GET /api/items?category=core-service&status=active&q=first&page=1&limit=1`
+returns:
 
 ```json
 {
   "data": [
-    { "id": "item-2", "name": "Second item", "status": "active" }
+    {
+      "id": "item-1",
+      "name": "First item",
+      "status": "active",
+      "category": "core-service"
+    }
   ],
   "pagination": {
-    "page": 2,
+    "page": 1,
     "limit": 1,
-    "total": 2,
-    "totalPages": 2
+    "total": 1,
+    "totalPages": 1
   }
 }
 ```
@@ -130,9 +153,59 @@ return HTTP 400:
 ```
 
 Query values must be scalar. Structured values are rejected along with
-unsupported or repeated parameters. Item detail, health, and collection reads
-remain GET-only; other methods and unknown routes use the generic `not_found`
-response.
+unsupported, repeated, or blank parameters. Category matching is exact and
+case-sensitive; `q` alone is trimmed and case-insensitive. Item detail, health,
+and collection reads remain GET-only; other methods and unknown routes use the
+generic `not_found` response. Repeated reads are deterministic, and changing a
+decoded response cannot mutate later repository-backed reads.
+
+## Summarize items
+
+`GET /api/items/summary` reports counts for the complete repository-filtered
+item set. It accepts only the same scalar, non-blank `status`, `category`, and
+`q` filters described above. Status and category matches remain exact, while
+`q` is trimmed and matched case-insensitively against item names.
+
+With no filters, the frozen fixtures return:
+
+```json
+{
+  "data": {
+    "total": 2,
+    "byStatus": {
+      "active": 2
+    },
+    "byCategory": {
+      "core-service": 1,
+      "support-service": 1
+    }
+  }
+}
+```
+
+Grouping maps contain only status and category values represented in the
+filtered result. Their counts are deterministic non-negative integers, and the
+sum of either grouping equals `total`. For example,
+`GET /api/items/summary?category=core-service&status=active&q=first` returns a
+total of `1` with only `active` and `core-service` grouping keys. A filter with
+no matches returns:
+
+```json
+{
+  "data": {
+    "total": 0,
+    "byStatus": {},
+    "byCategory": {}
+  }
+}
+```
+
+Summary counts always cover the full filtered set, never one collection page.
+Accordingly, `page` and `limit` are unsupported on this endpoint. Those keys,
+any other unsupported key, and repeated, structured, or blank query values
+return the same HTTP 400 `invalid_query` response used by collection
+validation. Summary reads are GET-only and do not alter later health,
+collection, detail, or summary reads.
 
 ## HTTP cache validators
 
