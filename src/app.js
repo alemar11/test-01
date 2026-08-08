@@ -9,7 +9,16 @@ const health = Object.freeze({
   service: Object.freeze({ name, version }),
   checks: Object.freeze({ liveness: "ok", readiness: "ready" }),
 });
-const supportedItemQueryParameters = new Set(["status", "q", "page", "limit"]);
+const supportedItemQueryParameters = new Set([
+  "status",
+  "q",
+  "sort",
+  "order",
+  "page",
+  "limit",
+]);
+const supportedItemSortFields = new Set(["id", "name", "status"]);
+const supportedItemSortOrders = new Set(["asc", "desc"]);
 
 app.disable("x-powered-by");
 
@@ -52,11 +61,17 @@ app.get("/api/items", (request, response) => {
     return;
   }
 
-  const { status, q } = request.query;
+  const { status, q, sort, order } = request.query;
   if (
     (status !== undefined &&
       (typeof status !== "string" || status.trim() === "")) ||
-    (q !== undefined && (typeof q !== "string" || q.trim() === ""))
+    (q !== undefined && (typeof q !== "string" || q.trim() === "")) ||
+    (sort !== undefined &&
+      (typeof sort !== "string" || !supportedItemSortFields.has(sort))) ||
+    (order !== undefined &&
+      (typeof order !== "string" ||
+        !supportedItemSortOrders.has(order) ||
+        sort === undefined))
   ) {
     invalidQuery(response);
     return;
@@ -71,18 +86,27 @@ app.get("/api/items", (request, response) => {
 
   const page = parsedPage ?? 1;
   const limit = parsedLimit ?? 20;
-  const filteredItems = listItems({ status, q });
-  const total = filteredItems.length;
+  const normalizedQuery = {
+    status: status ?? null,
+    q: q?.trim().toLowerCase() ?? null,
+    sort: sort ?? null,
+    order: sort === undefined ? null : (order ?? "asc"),
+    page,
+    limit,
+  };
+  const discoveredItems = listItems(normalizedQuery);
+  const total = discoveredItems.length;
   const start = (page - 1) * limit;
 
   response.json({
-    data: filteredItems.slice(start, start + limit),
+    data: discoveredItems.slice(start, start + limit),
     pagination: {
       page,
       limit,
       total,
       totalPages: Math.ceil(total / limit),
     },
+    query: normalizedQuery,
   });
 });
 

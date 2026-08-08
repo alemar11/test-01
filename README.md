@@ -95,30 +95,47 @@ Queried reads support only these scalar parameters:
 | --- | --- |
 | `status` | Exact status match; blank values are invalid. |
 | `q` | Case-insensitive name substring match after trimming; blank values are invalid. |
+| `sort` | Explicit sort field: `id`, `name`, or `status`. Omission preserves fixture order. |
+| `order` | `asc` or `desc`; defaults to `asc` when `sort` is present and is invalid without `sort`. |
 | `page` | 1-based page number. Defaults to `1`. |
 | `limit` | Page size. Defaults to `20` and cannot exceed `100`. |
 
-Filters are applied before pagination without changing fixture order. For
-example, `GET /api/items?status=active&q=item&page=2&limit=1` returns:
+Filtering and search happen before explicit sorting, and pagination happens
+last. Name sorting is case-insensitive; ID and status use their scalar values.
+Item ID is the ascending tie-breaker for equal sort values, in both sort
+directions. For example,
+`GET /api/items?status=active&q=item&sort=name&order=desc&page=2&limit=1`
+returns:
 
 ```json
 {
   "data": [
-    { "id": "item-2", "name": "Second item", "status": "active" }
+    { "id": "item-1", "name": "First item", "status": "active" }
   ],
   "pagination": {
     "page": 2,
     "limit": 1,
     "total": 2,
     "totalPages": 2
+  },
+  "query": {
+    "status": "active",
+    "q": "item",
+    "sort": "name",
+    "order": "desc",
+    "page": 2,
+    "limit": 1
   }
 }
 ```
 
-Pages beyond `totalPages` return an empty `data` array and retain the truthful
-pagination metadata. Unsupported parameters, repeated values, blank filters,
-non-decimal or non-positive `page`/`limit` values, and limits above `100`
-return HTTP 400:
+Every queried read includes the same six-key `query` object. It records null
+for omitted filters and sorting, the normalized lowercase trimmed search,
+the default sort order when applicable, and numeric pagination defaults. Pages
+beyond `totalPages` return an empty `data` array and retain truthful pagination
+and query metadata. Unsupported parameters, repeated or structured values,
+blank values, invalid sort/order combinations, non-decimal or non-positive
+`page`/`limit` values, unsafe integers, and limits above `100` return HTTP 400:
 
 ```json
 {

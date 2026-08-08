@@ -59,6 +59,18 @@ async function request(path, options) {
   };
 }
 
+function expectedQuery(overrides = {}) {
+  return {
+    status: null,
+    q: null,
+    sort: null,
+    order: null,
+    page: 1,
+    limit: 20,
+    ...overrides,
+  };
+}
+
 test("GET /health returns deterministic operational diagnostics", async () => {
   const firstResult = await get("/health");
   const secondResult = await get("/health");
@@ -102,14 +114,17 @@ test("GET /api/items applies exact status filtering", async () => {
   assert.deepEqual(matching.body, {
     data: expectedItems,
     pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
+    query: expectedQuery({ status: "active" }),
   });
   assert.deepEqual(missing.body, {
     data: [],
     pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    query: expectedQuery({ status: "inactive" }),
   });
   assert.deepEqual(padded.body, {
     data: [],
     pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    query: expectedQuery({ status: " active " }),
   });
 });
 
@@ -120,17 +135,53 @@ test("GET /api/items trims and case-folds name searches", async () => {
   assert.deepEqual(result.body, {
     data: [expectedItems[1]],
     pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
+    query: expectedQuery({ q: "second" }),
   });
 });
 
-test("GET /api/items combines filters before pagination in fixture order", async () => {
-  const result = await get("/api/items?status=active&q=item&page=2&limit=1");
+test("GET /api/items filters and searches before sorting and pagination", async () => {
+  const result = await get(
+    "/api/items?status=active&q=item&sort=name&order=desc&page=2&limit=1",
+  );
 
   assert.equal(result.status, 200);
   assert.deepEqual(result.body, {
-    data: [expectedItems[1]],
+    data: [expectedItems[0]],
     pagination: { page: 2, limit: 1, total: 2, totalPages: 2 },
+    query: expectedQuery({
+      status: "active",
+      q: "item",
+      sort: "name",
+      order: "desc",
+      page: 2,
+      limit: 1,
+    }),
   });
+});
+
+test("GET /api/items defaults explicit sorting to ascending", async () => {
+  const result = await get("/api/items?sort=name");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: expectedItems,
+    pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
+    query: expectedQuery({ sort: "name", order: "asc" }),
+  });
+});
+
+test("GET /api/items sorts each supported field deterministically", async () => {
+  const byId = await get("/api/items?sort=id&order=desc");
+  const byName = await get("/api/items?sort=name&order=desc");
+  const byStatus = await get("/api/items?sort=status&order=desc");
+
+  assert.deepEqual(byId.body.data, [expectedItems[1], expectedItems[0]]);
+  assert.deepEqual(byName.body.data, [expectedItems[1], expectedItems[0]]);
+  assert.deepEqual(
+    byStatus.body.data,
+    expectedItems,
+    "equal status values use ascending item IDs as the tie-breaker",
+  );
 });
 
 test("GET /api/items uses queried pagination defaults", async () => {
@@ -152,6 +203,7 @@ test("GET /api/items returns truthful out-of-range metadata", async () => {
   assert.deepEqual(result.body, {
     data: [],
     pagination: { page: 3, limit: 1, total: 2, totalPages: 2 },
+    query: expectedQuery({ page: 3, limit: 1 }),
   });
 });
 
@@ -173,12 +225,23 @@ for (const query of [
   "q=first&q=second",
   "page=1&page=2",
   "limit=1&limit=2",
+  "sort=id&sort=name",
+  "order=asc&order=desc",
   "status[mode]=active",
   "q[]=item",
+  "sort[]=id",
+  "order[direction]=asc",
   "status=",
   "status=%20%20",
   "q=",
   "q=%20%20",
+  "sort=",
+  "sort=%20id",
+  "sort=createdAt",
+  "order=",
+  "order=ASC",
+  "order=sideways",
+  "order=asc",
   "page=",
   "page=%201",
   "page=0",
@@ -207,13 +270,32 @@ for (const query of [
 }
 
 test("an invalid query does not affect later item reads", async () => {
-  const invalidResult = await get("/api/items?limit=101");
+  const invalidResult = await get("/api/items?sort=unknown");
   const collectionResult = await get("/api/items");
   const detailResult = await get("/api/items/item-1");
 
   assert.equal(invalidResult.status, 400);
   assert.deepEqual(collectionResult.body, { data: expectedItems });
   assert.deepEqual(detailResult.body, { data: expectedItems[0] });
+});
+
+test("repeating a discovery query returns identical ordered data and metadata", async () => {
+  const path = "/api/items?q=%20ITEM%20&sort=name&order=desc&page=1&limit=1";
+  const firstResult = await get(path);
+  const secondResult = await get(path);
+
+  assert.equal(firstResult.status, 200);
+  assert.deepEqual(firstResult.body, {
+    data: [expectedItems[1]],
+    pagination: { page: 1, limit: 1, total: 2, totalPages: 2 },
+    query: expectedQuery({
+      q: "item",
+      sort: "name",
+      order: "desc",
+      limit: 1,
+    }),
+  });
+  assert.deepEqual(secondResult.body, firstResult.body);
 });
 
 test("GET /api/items/:id returns an exact fixture match", async () => {
