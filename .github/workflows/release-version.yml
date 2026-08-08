@@ -19,7 +19,7 @@ concurrency:
 jobs:
   resolve:
     name: Revalidate exact confirmation
-    uses: ./.github/workflows/plan-release-version.yml
+    uses: ./.github/workflows/release-version-dry-run.yml
     with:
       application_mode: true
       operation: auto
