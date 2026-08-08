@@ -6,6 +6,8 @@ function listItems(filters = {}) {
   return items.filter(
     (item) =>
       (filters.status === undefined || item.status === filters.status) &&
+      (filters.category === undefined ||
+        item.category === filters.category) &&
       (normalizedQuery === undefined ||
         item.name.toLowerCase().includes(normalizedQuery)),
   );
