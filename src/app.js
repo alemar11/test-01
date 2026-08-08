@@ -14,6 +14,7 @@ const health = Object.freeze({
 const supportedItemQueryParameters = new Set([
   "status",
   "category",
+  "label",
   "q",
   "sort",
   "order",
@@ -22,7 +23,12 @@ const supportedItemQueryParameters = new Set([
 ]);
 const supportedItemSortFields = new Set(["id", "name", "status"]);
 const supportedItemSortOrders = new Set(["asc", "desc"]);
-const supportedSummaryQueryParameters = new Set(["status", "category", "q"]);
+const supportedSummaryQueryParameters = new Set([
+  "status",
+  "category",
+  "label",
+  "q",
+]);
 
 app.disable("x-powered-by");
 app.disable("etag");
@@ -56,18 +62,20 @@ function parseItemFilters(query, supportedParameters) {
     return null;
   }
 
-  const { status, category, q } = query;
+  const { status, category, label, q } = query;
   if (
     (status !== undefined &&
       (typeof status !== "string" || status.trim() === "")) ||
     (category !== undefined &&
       (typeof category !== "string" || category.trim() === "")) ||
+    (label !== undefined &&
+      (typeof label !== "string" || label.trim() === "")) ||
     (q !== undefined && (typeof q !== "string" || q.trim() === ""))
   ) {
     return null;
   }
 
-  return { status, category, q };
+  return { status, category, label, q };
 }
 
 app.get("/health", (request, response) => {
@@ -112,6 +120,7 @@ app.get("/api/items", (request, response) => {
   const normalizedQuery = {
     status: filters.status ?? null,
     category: filters.category ?? null,
+    label: filters.label ?? null,
     q: filters.q?.trim().toLowerCase() ?? null,
     sort: sort ?? null,
     order: sort === undefined ? null : (order ?? "asc"),
@@ -148,6 +157,7 @@ app.get("/api/items/summary", (request, response) => {
   const normalizedFilters = {
     status: filters.status ?? null,
     category: filters.category ?? null,
+    label: filters.label ?? null,
     q: filters.q?.trim().toLowerCase() ?? null,
   };
   const matchingItems = listItems(normalizedFilters);

@@ -12,12 +12,14 @@ const expectedItems = [
     name: "First item",
     status: "active",
     category: "core-service",
+    labels: ["featured", "read-only"],
   },
   {
     id: "item-2",
     name: "Second item",
     status: "active",
     category: "support-service",
+    labels: ["read-only", "support"],
   },
 ];
 const expectedSummary = {
@@ -70,7 +72,7 @@ test("item summaries safely count keys inherited by ordinary objects", () => {
   );
 });
 
-test("repository-backed items expose stable immutable categories", () => {
+test("repository-backed items expose stable immutable categories and labels", () => {
   const firstRead = itemsRepository.listItems();
   const secondRead = itemsRepository.listItems();
 
@@ -81,15 +83,37 @@ test("repository-backed items expose stable immutable categories", () => {
     itemsRepository.listItems({ category: "support-service" }),
     [expectedItems[1]],
   );
+  assert.deepEqual(itemsRepository.listItems({ label: "featured" }), [
+    expectedItems[0],
+  ]);
+  assert.deepEqual(
+    itemsRepository.listItems({ label: "read-only" }),
+    expectedItems,
+  );
   assert.ok(firstRead.every((item) => Object.isFrozen(item)));
+  assert.ok(firstRead.every((item) => Object.isFrozen(item.labels)));
   assert.equal(new Set(firstRead.map((item) => item.category)).size, 2);
   assert.ok(
     firstRead.every((item) =>
       /^[a-z]+(?:-[a-z]+)*$/.test(item.category),
     ),
   );
+  assert.ok(
+    firstRead.every(
+      (item) =>
+        item.labels.length > 0 &&
+        new Set(item.labels).size === item.labels.length &&
+        item.labels.every((label) => /^[a-z]+(?:-[a-z]+)*$/.test(label)) &&
+        item.labels.every(
+          (label, index) => index === 0 || item.labels[index - 1] < label,
+        ),
+    ),
+  );
   assert.throws(() => {
     Object.defineProperty(firstRead[0], "category", { value: "changed" });
+  }, TypeError);
+  assert.throws(() => {
+    firstRead[0].labels.push("changed");
   }, TypeError);
   assert.deepEqual(itemsRepository.listItems(), expectedItems);
 });
@@ -148,6 +172,7 @@ function expectedQuery(overrides = {}) {
   return {
     status: null,
     category: null,
+    label: null,
     q: null,
     sort: null,
     order: null,
@@ -162,7 +187,7 @@ function expectedInsights(overrides = {}) {
     total: 2,
     matching: 2,
     byStatus: { active: 2 },
-    filters: { status: null, category: null, q: null },
+    filters: { status: null, category: null, label: null, q: null },
     ...overrides,
   };
 }
@@ -247,7 +272,12 @@ test("GET /api/items/summary composes collection-equivalent filters", async () =
     insights: expectedInsights({
       matching: 1,
       byStatus: { active: 1 },
-      filters: { status: "active", category: "core-service", q: "first" },
+      filters: {
+        status: "active",
+        category: "core-service",
+        label: null,
+        q: "first",
+      },
     }),
   });
 });
@@ -263,7 +293,7 @@ test("GET /api/items/summary preserves exact status and category matching", asyn
     insights: expectedInsights({
       matching: 0,
       byStatus: {},
-      filters: { status: " active ", category: null, q: null },
+      filters: { status: " active ", category: null, label: null, q: null },
     }),
   });
   assert.deepEqual(differentCategoryCase.body, {
@@ -271,7 +301,12 @@ test("GET /api/items/summary preserves exact status and category matching", asyn
     insights: expectedInsights({
       matching: 0,
       byStatus: {},
-      filters: { status: null, category: "CORE-SERVICE", q: null },
+      filters: {
+        status: null,
+        category: "CORE-SERVICE",
+        label: null,
+        q: null,
+      },
     }),
   });
 });
@@ -285,7 +320,7 @@ test("GET /api/items/summary returns empty maps for zero matches", async () => {
     insights: expectedInsights({
       matching: 0,
       byStatus: {},
-      filters: { status: null, category: null, q: "missing" },
+      filters: { status: null, category: null, label: null, q: "missing" },
     }),
   });
 });
@@ -326,7 +361,9 @@ test("summary totals are independent of collection pagination", async () => {
   assert.deepEqual(
     summary.body,
     expectedSummaryResponse({
-      insights: { filters: { status: null, category: null, q: "item" } },
+      insights: {
+        filters: { status: null, category: null, label: null, q: "item" },
+      },
     }),
   );
 });
@@ -403,6 +440,63 @@ test("GET /api/items applies exact category filtering", async () => {
     data: [],
     pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
     query: expectedQuery({ category: "missing-category" }),
+  });
+});
+
+test("GET /api/items applies exact label filtering", async () => {
+  const shared = await get("/api/items?label=read-only");
+  const matching = await get("/api/items?label=featured");
+  const differentCase = await get("/api/items?label=FEATURED");
+  const missing = await get("/api/items?label=missing-label");
+
+  assert.deepEqual(shared.body, {
+    data: expectedItems,
+    pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
+    query: expectedQuery({ label: "read-only" }),
+  });
+  assert.deepEqual(matching.body, {
+    data: [expectedItems[0]],
+    pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
+    query: expectedQuery({ label: "featured" }),
+  });
+  assert.deepEqual(differentCase.body, {
+    data: [],
+    pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    query: expectedQuery({ label: "FEATURED" }),
+  });
+  assert.deepEqual(missing.body, {
+    data: [],
+    pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    query: expectedQuery({ label: "missing-label" }),
+  });
+});
+
+test("GET /api/items composes label filtering with discovery controls", async () => {
+  const query = new URLSearchParams({
+    label: "read-only",
+    category: "support-service",
+    status: "active",
+    q: "second",
+    sort: "name",
+    order: "desc",
+    page: "1",
+    limit: "1",
+  });
+  const result = await get(`/api/items?${query}`);
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: [expectedItems[1]],
+    pagination: { page: 1, limit: 1, total: 1, totalPages: 1 },
+    query: expectedQuery({
+      status: "active",
+      category: "support-service",
+      label: "read-only",
+      q: "second",
+      sort: "name",
+      order: "desc",
+      limit: 1,
+    }),
   });
 });
 
@@ -517,6 +611,7 @@ for (const query of [
   "unknown=value",
   "status=active&status=inactive",
   "category=core-service&category=support-service",
+  "label=featured&label=read-only",
   "q=first&q=second",
   "page=1&page=2",
   "limit=1&limit=2",
@@ -524,14 +619,19 @@ for (const query of [
   "order=asc&order=desc",
   "status[mode]=active",
   "category[mode]=core-service",
+  "label[mode]=featured",
   "q[]=item",
   "sort[]=id",
   "order[direction]=asc",
   "category[]=core-service",
+  "label[]=featured",
   "status=",
   "status=%20%20",
   "category=",
   "category=%20%20",
+  "label=",
+  "label=%20%20",
+  "labels=featured",
   "q=",
   "q=%20%20",
   "sort=",
@@ -576,14 +676,20 @@ for (const query of [
   "limit=20",
   "status=active&status=inactive",
   "category=core-service&category=support-service",
+  "label=featured&label=read-only",
   "q=first&q=second",
   "status[mode]=active",
   "category[mode]=core-service",
+  "label[mode]=featured",
   "q[]=item",
+  "label[]=featured",
   "status=",
   "status=%20%20",
   "category=",
   "category=%20%20",
+  "label=",
+  "label=%20%20",
+  "labels=featured",
   "q=",
   "q=%20%20",
 ]) {
@@ -657,7 +763,7 @@ test("GET /api/items/summary reuses normalized search semantics", async () => {
       insights: {
         matching: 1,
         byStatus: { active: 1 },
-        filters: { status: null, category: null, q: "first" },
+        filters: { status: null, category: null, label: null, q: "first" },
       },
     }),
   );
@@ -671,7 +777,7 @@ test("GET /api/items/summary reuses exact status semantics", async () => {
     matching.body,
     expectedSummaryResponse({
       insights: {
-        filters: { status: "active", category: null, q: null },
+        filters: { status: "active", category: null, label: null, q: null },
       },
     }),
   );
@@ -682,7 +788,12 @@ test("GET /api/items/summary reuses exact status semantics", async () => {
       insights: {
         matching: 0,
         byStatus: {},
-        filters: { status: " active ", category: null, q: null },
+        filters: {
+          status: " active ",
+          category: null,
+          label: null,
+          q: null,
+        },
       },
     }),
   );
@@ -705,7 +816,12 @@ test("GET /api/items/summary combines filters over the full matching set", async
       insights: {
         matching: 1,
         byStatus: { active: 1 },
-        filters: { status: "active", category: null, q: "second" },
+        filters: {
+          status: "active",
+          category: null,
+          label: null,
+          q: "second",
+        },
       },
     }),
   );
@@ -716,7 +832,70 @@ test("GET /api/items/summary combines filters over the full matching set", async
       insights: {
         matching: 0,
         byStatus: {},
-        filters: { status: "inactive", category: null, q: "item" },
+        filters: {
+          status: "inactive",
+          category: null,
+          label: null,
+          q: "item",
+        },
+      },
+    }),
+  );
+});
+
+test("GET /api/items/summary filters the complete set by exact label", async () => {
+  const shared = await get("/api/items/summary?label=read-only&q=item");
+  const matching = await get(
+    "/api/items/summary?label=support&category=support-service&status=active&q=second",
+  );
+  const differentCase = await get("/api/items/summary?label=SUPPORT");
+
+  assert.deepEqual(
+    shared.body,
+    expectedSummaryResponse({
+      insights: {
+        filters: {
+          status: null,
+          category: null,
+          label: "read-only",
+          q: "item",
+        },
+      },
+    }),
+  );
+  assert.deepEqual(
+    matching.body,
+    expectedSummaryResponse({
+      data: {
+        total: 1,
+        byStatus: { active: 1 },
+        byCategory: { "support-service": 1 },
+      },
+      insights: {
+        matching: 1,
+        byStatus: { active: 1 },
+        filters: {
+          status: "active",
+          category: "support-service",
+          label: "support",
+          q: "second",
+        },
+      },
+    }),
+  );
+  assert.deepEqual(
+    differentCase.body,
+    expectedSummaryResponse({
+      data: { total: 0, byStatus: {}, byCategory: {} },
+      insights: {
+        matching: 0,
+        byStatus: {},
+        filters: {
+          status: null,
+          category: null,
+          label: "SUPPORT",
+          q: null,
+        },
       },
     }),
   );
@@ -747,7 +926,7 @@ test("repeating an item summary returns identical aggregates and filters", async
     firstResult.body,
     expectedSummaryResponse({
       insights: {
-        filters: { status: "active", category: null, q: "item" },
+        filters: { status: "active", category: null, label: null, q: "item" },
       },
     }),
   );
@@ -766,6 +945,8 @@ test("successful baseline GET representations have stable validators", async () 
     "/health",
     "/api/items",
     "/api/items?q=item",
+    "/api/items?label=read-only",
+    "/api/items/summary?label=read-only",
     "/api/items/item-1",
   ]) {
     const firstResult = await get(path);
@@ -805,6 +986,32 @@ test("different collection and item representations have separate validators", a
   });
   assert.equal(itemMismatch.status, 200);
   assert.deepEqual(itemMismatch.body, { data: expectedItems[1] });
+});
+
+test("label-aware validators are representation-specific", async () => {
+  const featuredItems = await get("/api/items?label=featured");
+  const supportItems = await get("/api/items?label=support");
+  const featuredSummary = await get("/api/items/summary?label=featured");
+  const repeatedSummary = await get("/api/items/summary?label=featured");
+
+  assert.notEqual(assertValidEtag(featuredItems), assertValidEtag(supportItems));
+  assert.equal(
+    assertValidEtag(featuredSummary),
+    assertValidEtag(repeatedSummary),
+  );
+  assert.deepEqual(repeatedSummary.body, featuredSummary.body);
+
+  const conditionalSummary = await request(
+    "/api/items/summary?label=featured",
+    { headers: { "If-None-Match": featuredSummary.headers.get("etag") } },
+  );
+
+  assert.equal(conditionalSummary.status, 304);
+  assert.equal(conditionalSummary.text, "");
+  assert.equal(
+    conditionalSummary.headers.get("etag"),
+    featuredSummary.headers.get("etag"),
+  );
 });
 
 test("matching validators return an empty 304 with the current validator", async () => {
@@ -994,6 +1201,7 @@ test("GET /api/items/:id returns the item-not-found contract", async () => {
 test("response mutation cannot change repository-backed items", async () => {
   const firstCollection = await get("/api/items?q=item");
   firstCollection.body.data[0].name = "Changed item";
+  firstCollection.body.data[0].labels.push("changed");
   firstCollection.body.data.reverse();
 
   const detail = await get("/api/items/item-1");
