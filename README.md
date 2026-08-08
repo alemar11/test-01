@@ -13,11 +13,35 @@ currently exposes GET endpoints only.
 npm install
 npm run build
 npm test
+npm run fixtures:quality
 npm start
 ```
 
 `npm run build` performs syntax checks for every source file. There is no
 compilation step because the server runs directly on Node.js.
+
+## Fixture quality
+
+Run the offline fixture-quality report before exercising the API:
+
+```bash
+npm run fixtures:quality
+```
+
+The command reads only the frozen in-process fixtures, performs no network
+access, and prints deterministic JSON. A valid fixture set exits successfully:
+
+```json
+{"inspected":2,"violations":[]}
+```
+
+The reusable `createFixtureQualityReport(fixtures)` function is exported from
+`src/fixture-quality.js`. It reports every duplicate string ID first, sorted by
+ID, followed by invalid `name`, `status`, and `category` fields in fixture and
+field order. Names must be non-empty strings without surrounding whitespace;
+statuses and categories must be non-empty lower-kebab strings. Any violation
+causes the CLI behavior to return a non-zero exit status. Neither the
+programmatic function nor the command mutates or repairs fixture data.
 
 Available endpoints:
 

@@ -9,6 +9,9 @@ small, deterministic, and read-only.
 - `src/server.js` starts the process; `src/app.js` owns the HTTP application.
 - `src/data.js` contains the frozen static fixtures, including stable
   lower-kebab item categories.
+- `src/fixture-quality.js` provides deterministic, read-only validation of the
+  fixture identity and scalar metadata contract; `npm run fixtures:quality`
+  exposes the same offline report as JSON and fails when violations exist.
 - `src/items-repository.js` is the only read boundary over those fixtures and
   exposes category-aware `listItems()` and `findItemById(id)`.
 - `src/item-summary.js` derives totals and prototype-free grouping maps from a
