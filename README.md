@@ -111,12 +111,16 @@ Queried reads support only these scalar parameters:
 | `status` | Exact status match; blank values are invalid. |
 | `category` | Exact category match; blank values are invalid. |
 | `q` | Case-insensitive name substring match after trimming; blank values are invalid. |
+| `sort` | Explicit sort field: `id`, `name`, or `status`. Omission preserves fixture order. |
+| `order` | `asc` or `desc`; defaults to `asc` when `sort` is present and is invalid without `sort`. |
 | `page` | 1-based page number. Defaults to `1`. |
 | `limit` | Page size. Defaults to `20` and cannot exceed `100`. |
 
-All supplied filters compose and are applied before pagination without changing
-fixture order. For example,
-`GET /api/items?category=core-service&status=active&q=first&page=1&limit=1`
+All supplied filters compose before explicit sorting, and pagination happens
+last. Omission of `sort` preserves fixture order. Name sorting is
+case-insensitive; ID and status use their scalar values. Item ID is the
+ascending tie-breaker for equal sort values in both sort directions. For
+example, `GET /api/items?category=core-service&status=active&q=first&sort=name&order=desc&page=1&limit=1`
 returns:
 
 ```json
@@ -134,14 +138,26 @@ returns:
     "limit": 1,
     "total": 1,
     "totalPages": 1
+  },
+  "query": {
+    "status": "active",
+    "category": "core-service",
+    "q": "first",
+    "sort": "name",
+    "order": "desc",
+    "page": 1,
+    "limit": 1
   }
 }
 ```
 
-Pages beyond `totalPages` return an empty `data` array and retain the truthful
-pagination metadata. Unsupported parameters, repeated values, blank filters,
-non-decimal or non-positive `page`/`limit` values, and limits above `100`
-return HTTP 400:
+Every queried read includes the same seven-key `query` object. It records null
+for omitted filters and sorting, the normalized lowercase trimmed search,
+the default sort order when applicable, and numeric pagination defaults. Pages
+beyond `totalPages` return an empty `data` array and retain truthful pagination
+and query metadata. Unsupported parameters, repeated or structured values,
+blank values, invalid sort/order combinations, non-decimal or non-positive
+`page`/`limit` values, unsafe integers, and limits above `100` return HTTP 400:
 
 ```json
 {
@@ -161,50 +177,50 @@ decoded response cannot mutate later repository-backed reads.
 
 ## Summarize items
 
-`GET /api/items/summary` reports counts for the complete repository-filtered
-item set. It accepts only the same scalar, non-blank `status`, `category`, and
-`q` filters described above. Status and category matches remain exact, while
-`q` is trimmed and matched case-insensitively against item names.
+`GET /api/items/summary` reports deterministic aggregates over the complete
+repository-filtered item set. It accepts only the same scalar, non-blank
+`status`, `category`, and `q` filters described above. Status and category
+matches remain exact, while `q` is trimmed, lowercased in response metadata,
+and matched case-insensitively against item names.
 
-With no filters, the frozen fixtures return:
+The `data` object describes the complete matching set. `insights` adds the
+total fixture count, matching count, matching status breakdown, and normalized
+filter metadata. For example,
+`GET /api/items/summary?status=active&q=second` returns:
 
 ```json
 {
   "data": {
-    "total": 2,
+    "total": 1,
     "byStatus": {
-      "active": 2
+      "active": 1
     },
     "byCategory": {
-      "core-service": 1,
       "support-service": 1
+    }
+  },
+  "insights": {
+    "total": 2,
+    "matching": 1,
+    "byStatus": {
+      "active": 1
+    },
+    "filters": {
+      "status": "active",
+      "category": null,
+      "q": "second"
     }
   }
 }
 ```
 
-Grouping maps contain only status and category values represented in the
-filtered result. Their counts are deterministic non-negative integers, and the
-sum of either grouping equals `total`. For example,
-`GET /api/items/summary?category=core-service&status=active&q=first` returns a
-total of `1` with only `active` and `core-service` grouping keys. A filter with
-no matches returns:
-
-```json
-{
-  "data": {
-    "total": 0,
-    "byStatus": {},
-    "byCategory": {}
-  }
-}
-```
-
-Summary counts always cover the full filtered set, never one collection page.
-Accordingly, `page` and `limit` are unsupported on this endpoint. Those keys,
-any other unsupported key, and repeated, structured, or blank query values
-return the same HTTP 400 `invalid_query` response used by collection
-validation. Summary reads are GET-only and do not alter later health,
-collection, detail, or summary reads.
+Grouping maps contain only status or category values represented in the
+matching set, and their counts are deterministic non-negative integers. Empty
+matches return a `data.total` and `insights.matching` of `0` with empty grouping
+maps, while `insights.total` remains the complete fixture count. Summary counts
+always cover the full filtered set, never one collection page. Accordingly,
+sorting and pagination are unsupported. Unknown, repeated, structured, or
+blank inputs return the shared HTTP 400 `invalid_query` response without
+changing later health, collection, detail, or summary reads.
 
 Run the backend tests with `npm test`.

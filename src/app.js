@@ -14,9 +14,13 @@ const supportedItemQueryParameters = new Set([
   "status",
   "category",
   "q",
+  "sort",
+  "order",
   "page",
   "limit",
 ]);
+const supportedItemSortFields = new Set(["id", "name", "status"]);
+const supportedItemSortOrders = new Set(["asc", "desc"]);
 const supportedSummaryQueryParameters = new Set(["status", "category", "q"]);
 
 app.disable("x-powered-by");
@@ -80,7 +84,16 @@ app.get("/api/items", (request, response) => {
     request.query,
     supportedItemQueryParameters,
   );
-  if (filters === null) {
+  const { sort, order } = request.query;
+  if (
+    filters === null ||
+    (sort !== undefined &&
+      (typeof sort !== "string" || !supportedItemSortFields.has(sort))) ||
+    (order !== undefined &&
+      (typeof order !== "string" ||
+        !supportedItemSortOrders.has(order) ||
+        sort === undefined))
+  ) {
     invalidQuery(response);
     return;
   }
@@ -94,18 +107,28 @@ app.get("/api/items", (request, response) => {
 
   const page = parsedPage ?? 1;
   const limit = parsedLimit ?? 20;
-  const filteredItems = listItems(filters);
-  const total = filteredItems.length;
+  const normalizedQuery = {
+    status: filters.status ?? null,
+    category: filters.category ?? null,
+    q: filters.q?.trim().toLowerCase() ?? null,
+    sort: sort ?? null,
+    order: sort === undefined ? null : (order ?? "asc"),
+    page,
+    limit,
+  };
+  const discoveredItems = listItems(normalizedQuery);
+  const total = discoveredItems.length;
   const start = (page - 1) * limit;
 
   response.json({
-    data: filteredItems.slice(start, start + limit),
+    data: discoveredItems.slice(start, start + limit),
     pagination: {
       page,
       limit,
       total,
       totalPages: Math.ceil(total / limit),
     },
+    query: normalizedQuery,
   });
 });
 
@@ -119,7 +142,24 @@ app.get("/api/items/summary", (request, response) => {
     return;
   }
 
-  response.json({ data: summarizeItems(listItems(filters)) });
+  const allItems = listItems();
+  const normalizedFilters = {
+    status: filters.status ?? null,
+    category: filters.category ?? null,
+    q: filters.q?.trim().toLowerCase() ?? null,
+  };
+  const matchingItems = listItems(normalizedFilters);
+  const summary = summarizeItems(matchingItems);
+
+  response.json({
+    data: summary,
+    insights: {
+      total: allItems.length,
+      matching: matchingItems.length,
+      byStatus: summary.byStatus,
+      filters: normalizedFilters,
+    },
+  });
 });
 
 app.get("/api/items/:id", (request, response) => {
