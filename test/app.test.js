@@ -345,6 +345,17 @@ test("If-Match ignores empty list members", async () => {
     assert.equal(conditional.headers.get("etag"), etag);
   }
 
+  const combined = await request("/api/items/item-1", {
+    headers: {
+      "If-Match": `, ${etag}`,
+      "If-None-Match": etag,
+    },
+  });
+
+  assert.equal(combined.status, 304);
+  assert.equal(combined.text, "");
+  assert.equal(combined.headers.get("etag"), etag);
+
   for (const value of [", *", ",, *"]) {
     const malformedWildcard = await request("/api/items/item-1", {
       headers: { "If-Match": value },
