@@ -1,3 +1,4 @@
+# g:versioning release workflow template; resolver API 0.1.0
 name: Release version (apply)
 
 run-name: Apply · ${{ inputs.confirmed_tag }} · ${{ github.ref_name }}
@@ -319,18 +320,31 @@ jobs:
           fi
 
           if (( pr_count == 1 )); then
-            pr_url="$(jq -r '.[0].html_url' <<< "$open_prs")"
+            pr_payload="$(jq '.[0]' <<< "$open_prs")"
             pr_status="reused"
           else
-            pr_url="$(
+            pr_payload="$(
               gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls" \
                 --raw-field title="Release $TAG" \
                 --raw-field head="$RELEASE_BRANCH" \
                 --raw-field base="$DEFAULT_BRANCH" \
-                --raw-field body="Synchronize $RELEASE_BRANCH into $DEFAULT_BRANCH after immutable final tag $TAG. This workflow never merges the pull request automatically." \
-                --jq .html_url
+                --raw-field body="Synchronize $RELEASE_BRANCH into $DEFAULT_BRANCH after immutable final tag $TAG. This workflow never merges the pull request automatically."
             )"
             pr_status="created"
+          fi
+
+          read -r pr_url pr_state pr_base pr_head pr_repo < <(
+            jq -r '[.html_url, .state, .base.ref, .head.ref, .head.repo.full_name] | @tsv' \
+              <<< "$pr_payload"
+          )
+          if [[
+            "$pr_state" != "open" ||
+            "$pr_base" != "$DEFAULT_BRANCH" ||
+            "$pr_head" != "$RELEASE_BRANCH" ||
+            "$pr_repo" != "$GITHUB_REPOSITORY"
+          ]]; then
+            echo "The pull request readback does not match the exact release branch and default branch." >&2
+            exit 1
           fi
 
           {

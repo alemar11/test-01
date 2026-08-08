@@ -20,6 +20,12 @@ small, deterministic, and read-only.
 - The API exposes GET-only health, item, and item-summary reads. It has no
   database, persistence, or write operation.
 - `npm run build` checks source syntax; `npm test` verifies the HTTP contract.
+- Release automation is confined to
+  `.github/workflows/release-version-dry-run.yml` and
+  `.github/workflows/release-version-apply.yml`. It may calculate or create
+  only canonical `vX.Y.Z`/`vX.Y.Z-rc.N` tags, `release/vX.Y.Z` branches, and an
+  optional unmerged pull request to the default branch. It never checks out or
+  edits application source, reads package metadata, or creates commits.
 
 ## Scoped Contexts
 
