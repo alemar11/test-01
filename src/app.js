@@ -1,6 +1,7 @@
 const express = require("express");
 
 const { name, version } = require("../package.json");
+const { summarizeItems } = require("./item-summary");
 const { findItemById, listItems } = require("./items-repository");
 
 const app = express();
@@ -11,6 +12,7 @@ const health = Object.freeze({
 });
 const supportedItemQueryParameters = new Set([
   "status",
+  "category",
   "q",
   "sort",
   "order",
@@ -19,7 +21,7 @@ const supportedItemQueryParameters = new Set([
 ]);
 const supportedItemSortFields = new Set(["id", "name", "status"]);
 const supportedItemSortOrders = new Set(["asc", "desc"]);
-const supportedItemSummaryQueryParameters = new Set(["status", "q"]);
+const supportedSummaryQueryParameters = new Set(["status", "category", "q"]);
 
 app.disable("x-powered-by");
 
@@ -47,37 +49,23 @@ function parsePositiveInteger(value) {
 
 function parseItemFilters(query, supportedParameters) {
   const queryKeys = Object.keys(query);
+
   if (queryKeys.some((key) => !supportedParameters.has(key))) {
     return null;
   }
 
-  const { status, q } = query;
+  const { status, category, q } = query;
   if (
     (status !== undefined &&
       (typeof status !== "string" || status.trim() === "")) ||
+    (category !== undefined &&
+      (typeof category !== "string" || category.trim() === "")) ||
     (q !== undefined && (typeof q !== "string" || q.trim() === ""))
   ) {
     return null;
   }
 
-  return {
-    status: status ?? null,
-    q: q?.trim().toLowerCase() ?? null,
-  };
-}
-
-function countItemsByStatus(items) {
-  const counts = new Map();
-
-  for (const item of items) {
-    counts.set(item.status, (counts.get(item.status) ?? 0) + 1);
-  }
-
-  return Object.fromEntries(
-    [...counts.entries()].sort(([left], [right]) =>
-      left < right ? -1 : left > right ? 1 : 0,
-    ),
-  );
+  return { status, category, q };
 }
 
 app.get("/health", (_request, response) => {
@@ -92,17 +80,13 @@ app.get("/api/items", (request, response) => {
     return;
   }
 
-  const normalizedFilters = parseItemFilters(
+  const filters = parseItemFilters(
     request.query,
     supportedItemQueryParameters,
   );
-  if (normalizedFilters === null) {
-    invalidQuery(response);
-    return;
-  }
-
   const { sort, order } = request.query;
   if (
+    filters === null ||
     (sort !== undefined &&
       (typeof sort !== "string" || !supportedItemSortFields.has(sort))) ||
     (order !== undefined &&
@@ -124,7 +108,9 @@ app.get("/api/items", (request, response) => {
   const page = parsedPage ?? 1;
   const limit = parsedLimit ?? 20;
   const normalizedQuery = {
-    ...normalizedFilters,
+    status: filters.status ?? null,
+    category: filters.category ?? null,
+    q: filters.q?.trim().toLowerCase() ?? null,
     sort: sort ?? null,
     order: sort === undefined ? null : (order ?? "asc"),
     page,
@@ -149,7 +135,7 @@ app.get("/api/items", (request, response) => {
 app.get("/api/items/summary", (request, response) => {
   const filters = parseItemFilters(
     request.query,
-    supportedItemSummaryQueryParameters,
+    supportedSummaryQueryParameters,
   );
   if (filters === null) {
     invalidQuery(response);
@@ -157,13 +143,22 @@ app.get("/api/items/summary", (request, response) => {
   }
 
   const allItems = listItems();
-  const matchingItems = listItems(filters);
+  const normalizedFilters = {
+    status: filters.status ?? null,
+    category: filters.category ?? null,
+    q: filters.q?.trim().toLowerCase() ?? null,
+  };
+  const matchingItems = listItems(normalizedFilters);
+  const summary = summarizeItems(matchingItems);
 
   response.json({
-    total: allItems.length,
-    matching: matchingItems.length,
-    byStatus: countItemsByStatus(matchingItems),
-    filters,
+    data: summary,
+    insights: {
+      total: allItems.length,
+      matching: matchingItems.length,
+      byStatus: summary.byStatus,
+      filters: normalizedFilters,
+    },
   });
 });
 

@@ -3,12 +3,28 @@ const { test } = require("node:test");
 
 const packageMetadata = require("../package.json");
 const app = require("../src/app");
+const { summarizeItems } = require("../src/item-summary");
 const itemsRepository = require("../src/items-repository");
 
 const expectedItems = [
-  { id: "item-1", name: "First item", status: "active" },
-  { id: "item-2", name: "Second item", status: "active" },
+  {
+    id: "item-1",
+    name: "First item",
+    status: "active",
+    category: "core-service",
+  },
+  {
+    id: "item-2",
+    name: "Second item",
+    status: "active",
+    category: "support-service",
+  },
 ];
+const expectedSummary = {
+  total: 2,
+  byStatus: { active: 2 },
+  byCategory: { "core-service": 1, "support-service": 1 },
+};
 
 let server;
 let baseUrl;
@@ -18,6 +34,64 @@ test("item repository exposes the exact read API", () => {
     "findItemById",
     "listItems",
   ]);
+});
+
+test("item summaries safely count keys inherited by ordinary objects", () => {
+  const summary = summarizeItems([
+    { status: "constructor", category: "constructor" },
+    { status: "constructor", category: "constructor" },
+    { status: "__proto__", category: "core-service" },
+  ]);
+  const serializedSummary = JSON.parse(JSON.stringify(summary));
+
+  assert.equal(Object.getPrototypeOf(summary.byStatus), null);
+  assert.equal(Object.getPrototypeOf(summary.byCategory), null);
+  assert.equal(serializedSummary.total, 3);
+  assert.deepEqual(Object.keys(serializedSummary.byStatus), [
+    "constructor",
+    "__proto__",
+  ]);
+  assert.equal(serializedSummary.byStatus.constructor, 2);
+  assert.equal(serializedSummary.byStatus.__proto__, 1);
+  assert.deepEqual(serializedSummary.byCategory, {
+    constructor: 2,
+    "core-service": 1,
+  });
+  assert.equal(
+    Object.values(summary.byStatus).reduce((total, count) => total + count, 0),
+    summary.total,
+  );
+  assert.equal(
+    Object.values(summary.byCategory).reduce(
+      (total, count) => total + count,
+      0,
+    ),
+    summary.total,
+  );
+});
+
+test("repository-backed items expose stable immutable categories", () => {
+  const firstRead = itemsRepository.listItems();
+  const secondRead = itemsRepository.listItems();
+
+  assert.deepEqual(firstRead, expectedItems);
+  assert.deepEqual(secondRead, expectedItems);
+  assert.deepEqual(itemsRepository.findItemById("item-1"), expectedItems[0]);
+  assert.deepEqual(
+    itemsRepository.listItems({ category: "support-service" }),
+    [expectedItems[1]],
+  );
+  assert.ok(firstRead.every((item) => Object.isFrozen(item)));
+  assert.equal(new Set(firstRead.map((item) => item.category)).size, 2);
+  assert.ok(
+    firstRead.every((item) =>
+      /^[a-z]+(?:-[a-z]+)*$/.test(item.category),
+    ),
+  );
+  assert.throws(() => {
+    Object.defineProperty(firstRead[0], "category", { value: "changed" });
+  }, TypeError);
+  assert.deepEqual(itemsRepository.listItems(), expectedItems);
 });
 
 function startServer() {
@@ -62,6 +136,7 @@ async function request(path, options) {
 function expectedQuery(overrides = {}) {
   return {
     status: null,
+    category: null,
     q: null,
     sort: null,
     order: null,
@@ -71,14 +146,18 @@ function expectedQuery(overrides = {}) {
   };
 }
 
-function expectedSummary(overrides = {}) {
+function expectedInsights(overrides = {}) {
   return {
     total: 2,
     matching: 2,
     byStatus: { active: 2 },
-    filters: { status: null, q: null },
+    filters: { status: null, category: null, q: null },
     ...overrides,
   };
+}
+
+function expectedSummaryResponse({ data = expectedSummary, insights = {} } = {}) {
+  return { data, insights: expectedInsights(insights) };
 }
 
 test("GET /health returns deterministic operational diagnostics", async () => {
@@ -114,6 +193,131 @@ test("GET /api/items preserves the exact no-query response", async () => {
   assert.equal(result.status, 200);
   assert.deepEqual(result.body, { data: expectedItems });
   assert.deepEqual(Object.keys(result.body), ["data"]);
+});
+
+test("GET /api/items/summary returns deterministic full-set counts", async () => {
+  const firstResult = await get("/api/items/summary");
+  const secondResult = await get("/api/items/summary");
+
+  assert.equal(firstResult.status, 200);
+  assert.equal(secondResult.status, 200);
+  assert.deepEqual(firstResult.body, expectedSummaryResponse());
+  assert.deepEqual(secondResult.body, firstResult.body);
+  assert.deepEqual(Object.keys(firstResult.body), ["data", "insights"]);
+  assert.deepEqual(Object.keys(firstResult.body.data), [
+    "total",
+    "byStatus",
+    "byCategory",
+  ]);
+  assert.ok(
+    Object.values(firstResult.body.data.byStatus).every(
+      (count) => Number.isInteger(count) && count >= 0,
+    ),
+  );
+  assert.ok(
+    Object.values(firstResult.body.data.byCategory).every(
+      (count) => Number.isInteger(count) && count >= 0,
+    ),
+  );
+});
+
+test("GET /api/items/summary composes collection-equivalent filters", async () => {
+  const result = await get(
+    "/api/items/summary?category=core-service&status=active&q=%20FIRST%20",
+  );
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: {
+      total: 1,
+      byStatus: { active: 1 },
+      byCategory: { "core-service": 1 },
+    },
+    insights: expectedInsights({
+      matching: 1,
+      byStatus: { active: 1 },
+      filters: { status: "active", category: "core-service", q: "first" },
+    }),
+  });
+});
+
+test("GET /api/items/summary preserves exact status and category matching", async () => {
+  const paddedStatus = await get("/api/items/summary?status=%20active%20");
+  const differentCategoryCase = await get(
+    "/api/items/summary?category=CORE-SERVICE",
+  );
+
+  assert.deepEqual(paddedStatus.body, {
+    data: { total: 0, byStatus: {}, byCategory: {} },
+    insights: expectedInsights({
+      matching: 0,
+      byStatus: {},
+      filters: { status: " active ", category: null, q: null },
+    }),
+  });
+  assert.deepEqual(differentCategoryCase.body, {
+    data: { total: 0, byStatus: {}, byCategory: {} },
+    insights: expectedInsights({
+      matching: 0,
+      byStatus: {},
+      filters: { status: null, category: "CORE-SERVICE", q: null },
+    }),
+  });
+});
+
+test("GET /api/items/summary returns empty maps for zero matches", async () => {
+  const result = await get("/api/items/summary?q=missing");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: { total: 0, byStatus: {}, byCategory: {} },
+    insights: expectedInsights({
+      matching: 0,
+      byStatus: {},
+      filters: { status: null, category: null, q: "missing" },
+    }),
+  });
+});
+
+test("summary grouping sums equal the complete filtered total", async () => {
+  for (const path of [
+    "/api/items/summary",
+    "/api/items/summary?status=active",
+    "/api/items/summary?category=support-service&q=second",
+    "/api/items/summary?q=missing",
+  ]) {
+    const result = await get(path);
+    const { total, byStatus, byCategory } = result.body.data;
+    const statusTotal = Object.values(byStatus).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+    const categoryTotal = Object.values(byCategory).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+
+    assert.equal(result.status, 200);
+    assert.equal(statusTotal, total);
+    assert.equal(categoryTotal, total);
+  }
+});
+
+test("summary totals are independent of collection pagination", async () => {
+  const firstPage = await get("/api/items?q=item&page=1&limit=1");
+  const secondPage = await get("/api/items?q=item&page=2&limit=1");
+  const summary = await get("/api/items/summary?q=item");
+
+  assert.equal(firstPage.body.data.length, 1);
+  assert.equal(secondPage.body.data.length, 1);
+  assert.equal(firstPage.body.pagination.total, 2);
+  assert.equal(secondPage.body.pagination.total, 2);
+  assert.deepEqual(
+    summary.body,
+    expectedSummaryResponse({
+      insights: { filters: { status: null, category: null, q: "item" } },
+    }),
+  );
 });
 
 test("GET /api/items applies exact status filtering", async () => {
@@ -163,6 +367,75 @@ test("GET /api/items filters and searches before sorting and pagination", async 
       q: "item",
       sort: "name",
       order: "desc",
+      page: 2,
+      limit: 1,
+    }),
+  });
+});
+
+test("GET /api/items applies exact category filtering", async () => {
+  const matching = await get("/api/items?category=core-service");
+  const differentCase = await get("/api/items?category=CORE-SERVICE");
+  const missing = await get("/api/items?category=missing-category");
+
+  assert.deepEqual(matching.body, {
+    data: [expectedItems[0]],
+    pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
+    query: expectedQuery({ category: "core-service" }),
+  });
+  assert.deepEqual(differentCase.body, {
+    data: [],
+    pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    query: expectedQuery({ category: "CORE-SERVICE" }),
+  });
+  assert.deepEqual(missing.body, {
+    data: [],
+    pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    query: expectedQuery({ category: "missing-category" }),
+  });
+});
+
+test("GET /api/items composes category, status, and search before pagination", async () => {
+  const firstPage = await get(
+    "/api/items?category=core-service&status=active&q=%20FIRST%20&page=1&limit=1",
+  );
+  const outOfRange = await get(
+    "/api/items?category=core-service&status=active&q=%20FIRST%20&page=2&limit=1",
+  );
+
+  assert.deepEqual(firstPage.body, {
+    data: [expectedItems[0]],
+    pagination: { page: 1, limit: 1, total: 1, totalPages: 1 },
+    query: expectedQuery({
+      status: "active",
+      category: "core-service",
+      q: "first",
+      limit: 1,
+    }),
+  });
+  assert.deepEqual(outOfRange.body, {
+    data: [],
+    pagination: { page: 2, limit: 1, total: 1, totalPages: 1 },
+    query: expectedQuery({
+      status: "active",
+      category: "core-service",
+      q: "first",
+      page: 2,
+      limit: 1,
+    }),
+  });
+});
+
+test("GET /api/items combines filters before pagination in fixture order", async () => {
+  const result = await get("/api/items?status=active&q=item&page=2&limit=1");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: [expectedItems[1]],
+    pagination: { page: 2, limit: 1, total: 2, totalPages: 2 },
+    query: expectedQuery({
+      status: "active",
+      q: "item",
       page: 2,
       limit: 1,
     }),
@@ -232,17 +505,22 @@ test("GET /api/items accepts the maximum limit", async () => {
 for (const query of [
   "unknown=value",
   "status=active&status=inactive",
+  "category=core-service&category=support-service",
   "q=first&q=second",
   "page=1&page=2",
   "limit=1&limit=2",
   "sort=id&sort=name",
   "order=asc&order=desc",
   "status[mode]=active",
+  "category[mode]=core-service",
   "q[]=item",
   "sort[]=id",
   "order[direction]=asc",
+  "category[]=core-service",
   "status=",
   "status=%20%20",
+  "category=",
+  "category=%20%20",
   "q=",
   "q=%20%20",
   "sort=",
@@ -268,6 +546,38 @@ for (const query of [
 ]) {
   test(`GET /api/items rejects invalid query: ${query}`, async () => {
     const result = await get(`/api/items?${query}`);
+
+    assert.equal(result.status, 400);
+    assert.deepEqual(result.body, {
+      error: {
+        code: "invalid_query",
+        message: "Invalid query parameters",
+      },
+    });
+  });
+}
+
+for (const query of [
+  "unknown=value",
+  "sort=name",
+  "order=desc",
+  "page=1",
+  "limit=20",
+  "status=active&status=inactive",
+  "category=core-service&category=support-service",
+  "q=first&q=second",
+  "status[mode]=active",
+  "category[mode]=core-service",
+  "q[]=item",
+  "status=",
+  "status=%20%20",
+  "category=",
+  "category=%20%20",
+  "q=",
+  "q=%20%20",
+]) {
+  test(`GET /api/items/summary rejects invalid query: ${query}`, async () => {
+    const result = await get(`/api/items/summary?${query}`);
 
     assert.equal(result.status, 400);
     assert.deepEqual(result.body, {
@@ -312,8 +622,8 @@ test("GET /api/items/summary reports the complete fixture aggregate", async () =
   const result = await get("/api/items/summary");
 
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body, expectedSummary());
-  assert.deepEqual(Object.keys(result.body), [
+  assert.deepEqual(result.body, expectedSummaryResponse());
+  assert.deepEqual(Object.keys(result.body.insights), [
     "total",
     "matching",
     "byStatus",
@@ -327,10 +637,17 @@ test("GET /api/items/summary reuses normalized search semantics", async () => {
   assert.equal(result.status, 200);
   assert.deepEqual(
     result.body,
-    expectedSummary({
-      matching: 1,
-      byStatus: { active: 1 },
-      filters: { status: null, q: "first" },
+    expectedSummaryResponse({
+      data: {
+        total: 1,
+        byStatus: { active: 1 },
+        byCategory: { "core-service": 1 },
+      },
+      insights: {
+        matching: 1,
+        byStatus: { active: 1 },
+        filters: { status: null, category: null, q: "first" },
+      },
     }),
   );
 });
@@ -341,14 +658,21 @@ test("GET /api/items/summary reuses exact status semantics", async () => {
 
   assert.deepEqual(
     matching.body,
-    expectedSummary({ filters: { status: "active", q: null } }),
+    expectedSummaryResponse({
+      insights: {
+        filters: { status: "active", category: null, q: null },
+      },
+    }),
   );
   assert.deepEqual(
     padded.body,
-    expectedSummary({
-      matching: 0,
-      byStatus: {},
-      filters: { status: " active ", q: null },
+    expectedSummaryResponse({
+      data: { total: 0, byStatus: {}, byCategory: {} },
+      insights: {
+        matching: 0,
+        byStatus: {},
+        filters: { status: " active ", category: null, q: null },
+      },
     }),
   );
 });
@@ -361,49 +685,31 @@ test("GET /api/items/summary combines filters over the full matching set", async
 
   assert.deepEqual(
     matching.body,
-    expectedSummary({
-      matching: 1,
-      byStatus: { active: 1 },
-      filters: { status: "active", q: "second" },
+    expectedSummaryResponse({
+      data: {
+        total: 1,
+        byStatus: { active: 1 },
+        byCategory: { "support-service": 1 },
+      },
+      insights: {
+        matching: 1,
+        byStatus: { active: 1 },
+        filters: { status: "active", category: null, q: "second" },
+      },
     }),
   );
   assert.deepEqual(
     empty.body,
-    expectedSummary({
-      matching: 0,
-      byStatus: {},
-      filters: { status: "inactive", q: "item" },
+    expectedSummaryResponse({
+      data: { total: 0, byStatus: {}, byCategory: {} },
+      insights: {
+        matching: 0,
+        byStatus: {},
+        filters: { status: "inactive", category: null, q: "item" },
+      },
     }),
   );
 });
-
-for (const query of [
-  "unknown=value",
-  "sort=name",
-  "order=desc",
-  "page=1",
-  "limit=1",
-  "status=active&status=inactive",
-  "q=first&q=second",
-  "status[mode]=active",
-  "q[]=item",
-  "status=",
-  "status=%20%20",
-  "q=",
-  "q=%20%20",
-]) {
-  test(`GET /api/items/summary rejects invalid query: ${query}`, async () => {
-    const result = await get(`/api/items/summary?${query}`);
-
-    assert.equal(result.status, 400);
-    assert.deepEqual(result.body, {
-      error: {
-        code: "invalid_query",
-        message: "Invalid query parameters",
-      },
-    });
-  });
-}
 
 test("an invalid summary query does not affect later reads", async () => {
   const invalidResult = await get("/api/items/summary?sort=name");
@@ -413,7 +719,7 @@ test("an invalid summary query does not affect later reads", async () => {
   const healthResult = await get("/health");
 
   assert.equal(invalidResult.status, 400);
-  assert.deepEqual(summaryResult.body, expectedSummary());
+  assert.deepEqual(summaryResult.body, expectedSummaryResponse());
   assert.deepEqual(collectionResult.body, { data: expectedItems });
   assert.deepEqual(detailResult.body, { data: expectedItems[0] });
   assert.equal(healthResult.status, 200);
@@ -428,7 +734,11 @@ test("repeating an item summary returns identical aggregates and filters", async
   assert.equal(firstResult.status, 200);
   assert.deepEqual(
     firstResult.body,
-    expectedSummary({ filters: { status: "active", q: "item" } }),
+    expectedSummaryResponse({
+      insights: {
+        filters: { status: "active", category: null, q: "item" },
+      },
+    }),
   );
   assert.deepEqual(secondResult.body, firstResult.body);
 });
