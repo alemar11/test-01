@@ -293,6 +293,38 @@ test("matching validators return an empty 304 with the current validator", async
   assert.equal(conditional.headers.get("content-type"), null);
 });
 
+test("If-Match failure takes precedence over a matching If-None-Match", async () => {
+  const unconditional = await get("/api/items/item-1");
+  const etag = assertValidEtag(unconditional);
+  const failed = await request("/api/items/item-1", {
+    headers: {
+      "If-Match": '"unrelated"',
+      "If-None-Match": etag,
+    },
+  });
+  const weakFailed = await request("/api/items/item-1", {
+    headers: {
+      "If-Match": `W/${etag}`,
+      "If-None-Match": etag,
+    },
+  });
+  const satisfied = await request("/api/items/item-1", {
+    headers: {
+      "If-Match": etag,
+      "If-None-Match": etag,
+    },
+  });
+
+  assert.equal(failed.status, 412);
+  assert.equal(failed.text, "");
+  assert.equal(failed.body, null);
+  assert.equal(failed.headers.get("etag"), etag);
+  assert.equal(weakFailed.status, 412);
+  assert.equal(satisfied.status, 304);
+  assert.equal(satisfied.text, "");
+  assert.equal(satisfied.headers.get("etag"), etag);
+});
+
 test(
   "If-None-Match supports non-matches, lists, weak comparison, and wildcard",
   async () => {

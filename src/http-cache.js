@@ -69,11 +69,77 @@ function ifNoneMatchMatches(value, currentEtag) {
   return false;
 }
 
+function ifMatchMatches(value, currentEtag) {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  let index = skipOptionalWhitespace(value, 0);
+  if (value[index] === "*") {
+    return skipOptionalWhitespace(value, index + 1) === value.length;
+  }
+
+  let matches = false;
+
+  while (index < value.length) {
+    const weak = value.startsWith("W/", index);
+    if (weak) {
+      index += 2;
+    }
+
+    if (value[index] !== '"') {
+      return false;
+    }
+
+    const tagStart = index;
+    index += 1;
+
+    while (index < value.length && value[index] !== '"') {
+      const character = value.charCodeAt(index);
+      if (character < 0x21 || character === 0x7f) {
+        return false;
+      }
+      index += 1;
+    }
+
+    if (index >= value.length) {
+      return false;
+    }
+
+    index += 1;
+    matches ||= !weak && value.slice(tagStart, index) === currentEtag;
+    index = skipOptionalWhitespace(value, index);
+
+    if (index === value.length) {
+      return matches;
+    }
+
+    if (value[index] !== ",") {
+      return false;
+    }
+
+    index = skipOptionalWhitespace(value, index + 1);
+  }
+
+  return false;
+}
+
 function sendValidatedJson(request, response, body) {
   const representation = JSON.stringify(body);
   const etag = representationEtag(representation);
 
   response.set("ETag", etag);
+
+  if (
+    request.method === "GET" ||
+    request.method === "HEAD"
+  ) {
+    const ifMatch = request.get("If-Match");
+    if (ifMatch !== undefined && !ifMatchMatches(ifMatch, etag)) {
+      response.status(412).end();
+      return;
+    }
+  }
 
   if (
     (request.method === "GET" || request.method === "HEAD") &&
