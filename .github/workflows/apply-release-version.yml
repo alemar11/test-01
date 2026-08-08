@@ -177,9 +177,6 @@ jobs:
       needs.resolve.outputs.kind == 'final'
     needs: resolve
     runs-on: ubuntu-latest
-    environment:
-      name: release-final
-      deployment: false
     permissions:
       contents: write
       pull-requests: write
