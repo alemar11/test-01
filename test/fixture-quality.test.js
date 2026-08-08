@@ -86,6 +86,17 @@ test("all duplicate IDs and malformed scalar fields are reported in stable order
   assert.deepEqual(createFixtureQualityReport(invalidFixtures), expected);
 });
 
+test("sparse fixture slots produce deterministic required-field violations", () => {
+  assert.deepEqual(createFixtureQualityReport(new Array(1)), {
+    inspected: 1,
+    violations: [
+      { code: "invalid_name", field: "name", index: 0 },
+      { code: "invalid_status", field: "status", index: 0 },
+      { code: "invalid_category", field: "category", index: 0 },
+    ],
+  });
+});
+
 test("CLI behavior prints JSON and returns success for valid fixtures", () => {
   const result = spawnSync(process.execPath, ["scripts/fixture-quality-report.js"], {
     cwd: require("node:path").resolve(__dirname, ".."),

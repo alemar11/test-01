@@ -12,15 +12,17 @@ function isValidLowerKebab(value) {
 function findDuplicateIdViolations(fixtures) {
   const indexesById = new Map();
 
-  fixtures.forEach((fixture, index) => {
+  for (let index = 0; index < fixtures.length; index += 1) {
+    const fixture = fixtures[index];
+
     if (typeof fixture?.id !== "string") {
-      return;
+      continue;
     }
 
     const indexes = indexesById.get(fixture.id) ?? [];
     indexes.push(index);
     indexesById.set(fixture.id, indexes);
-  });
+  }
 
   return [...indexesById.entries()]
     .filter(([, indexes]) => indexes.length > 1)
@@ -42,15 +44,23 @@ function findScalarViolations(fixtures) {
     category: isValidLowerKebab,
   };
 
-  return fixtures.flatMap((fixture, index) =>
-    SCALAR_FIELDS.filter((field) => !validators[field](fixture?.[field])).map(
-      (field) => ({
-        code: `invalid_${field}`,
-        field,
-        index,
-      }),
-    ),
-  );
+  const violations = [];
+
+  for (let index = 0; index < fixtures.length; index += 1) {
+    const fixture = fixtures[index];
+
+    for (const field of SCALAR_FIELDS) {
+      if (!validators[field](fixture?.[field])) {
+        violations.push({
+          code: `invalid_${field}`,
+          field,
+          index,
+        });
+      }
+    }
+  }
+
+  return violations;
 }
 
 function createFixtureQualityReport(fixtures) {
