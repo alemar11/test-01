@@ -1,6 +1,7 @@
 const express = require("express");
 
 const { name, version } = require("../package.json");
+const { summarizeItems } = require("./item-summary");
 const { findItemById, listItems } = require("./items-repository");
 
 const app = express();
@@ -61,22 +62,6 @@ function parseItemFilters(query, supportedParameters) {
   }
 
   return { status, category, q };
-}
-
-function summarizeItems(items) {
-  const byStatus = {};
-  const byCategory = {};
-
-  for (const item of items) {
-    byStatus[item.status] = (byStatus[item.status] ?? 0) + 1;
-    byCategory[item.category] = (byCategory[item.category] ?? 0) + 1;
-  }
-
-  return {
-    total: items.length,
-    byStatus,
-    byCategory,
-  };
 }
 
 app.get("/health", (_request, response) => {

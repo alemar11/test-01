@@ -11,6 +11,8 @@ small, deterministic, and read-only.
   lower-kebab item categories.
 - `src/items-repository.js` is the only read boundary over those fixtures and
   exposes category-aware `listItems()` and `findItemById(id)`.
+- `src/item-summary.js` derives totals and prototype-free grouping maps from a
+  repository result without introducing another fixture-read boundary.
 - `GET /api/items/summary` aggregates the complete `listItems()` result after
   collection-equivalent status, category, and name-search filtering. It reports
   a total plus represented-value status and category maps and does not accept

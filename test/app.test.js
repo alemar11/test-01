@@ -3,6 +3,7 @@ const { test } = require("node:test");
 
 const packageMetadata = require("../package.json");
 const app = require("../src/app");
+const { summarizeItems } = require("../src/item-summary");
 const itemsRepository = require("../src/items-repository");
 
 const expectedItems = [
@@ -33,6 +34,40 @@ test("item repository exposes the exact read API", () => {
     "findItemById",
     "listItems",
   ]);
+});
+
+test("item summaries safely count keys inherited by ordinary objects", () => {
+  const summary = summarizeItems([
+    { status: "constructor", category: "constructor" },
+    { status: "constructor", category: "constructor" },
+    { status: "__proto__", category: "core-service" },
+  ]);
+  const serializedSummary = JSON.parse(JSON.stringify(summary));
+
+  assert.equal(Object.getPrototypeOf(summary.byStatus), null);
+  assert.equal(Object.getPrototypeOf(summary.byCategory), null);
+  assert.equal(serializedSummary.total, 3);
+  assert.deepEqual(Object.keys(serializedSummary.byStatus), [
+    "constructor",
+    "__proto__",
+  ]);
+  assert.equal(serializedSummary.byStatus.constructor, 2);
+  assert.equal(serializedSummary.byStatus.__proto__, 1);
+  assert.deepEqual(serializedSummary.byCategory, {
+    constructor: 2,
+    "core-service": 1,
+  });
+  assert.equal(
+    Object.values(summary.byStatus).reduce((total, count) => total + count, 0),
+    summary.total,
+  );
+  assert.equal(
+    Object.values(summary.byCategory).reduce(
+      (total, count) => total + count,
+      0,
+    ),
+    summary.total,
+  );
 });
 
 test("repository-backed items expose stable immutable categories", () => {
