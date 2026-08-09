@@ -25,7 +25,9 @@ small, deterministic, and read-only.
   `.github/workflows/release-version-apply.yml`. It may calculate or create
   only canonical `vX.Y.Z`/`vX.Y.Z-rc.N` tags, `release/vX.Y.Z` branches, and an
   optional unmerged pull request to the default branch. It never checks out or
-  edits application source, reads package metadata, or creates commits.
+  edits application source, reads package metadata, or creates commits. The
+  resolver exposes `is_final` for downstream jobs that must distinguish a
+  stable tag from a release candidate without reparsing it.
 
 ## Scoped Contexts
 

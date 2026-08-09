@@ -1,4 +1,4 @@
-# g:versioning release workflow template; resolver API 0.1.0
+# g:versioning release workflow template; resolver API 0.2.0
 name: Release version (dry run)
 
 run-name: Dry run · ${{ github.ref_name }}
@@ -50,6 +50,9 @@ on:
       default_branch:
         description: Current repository default branch
         value: ${{ jobs.resolve.outputs.default_branch }}
+      is_final:
+        description: Whether the exact resolved tag is a stable final tag
+        value: ${{ jobs.resolve.outputs.is_final }}
       kind:
         description: Candidate or final operation kind
         value: ${{ jobs.resolve.outputs.kind }}
@@ -88,6 +91,7 @@ jobs:
       application_ready: ${{ steps.resolve.outputs.application_ready }}
       context: ${{ steps.resolve.outputs.context }}
       default_branch: ${{ steps.resolve.outputs.default_branch }}
+      is_final: ${{ steps.resolve.outputs.is_final }}
       kind: ${{ steps.resolve.outputs.kind }}
       release_branch: ${{ steps.resolve.outputs.release_branch }}
       resolver_version: ${{ steps.resolve.outputs.resolver_version }}
@@ -151,7 +155,7 @@ jobs:
 
       - name: Verify release resolver API version
         env:
-          EXPECTED_RESOLVER_VERSION: "0.1.0"
+          EXPECTED_RESOLVER_VERSION: "0.2.0"
         shell: bash
         run: |
           set -euo pipefail

@@ -1,4 +1,4 @@
-# g:versioning release workflow template; resolver API 0.1.0
+# g:versioning release workflow template; resolver API 0.2.0
 name: Release version (apply)
 
 run-name: Apply · ${{ inputs.confirmed_tag }} · ${{ github.ref_name }}
@@ -34,6 +34,7 @@ jobs:
     name: Create candidate tag and release branch
     if: >-
       needs.resolve.outputs.application_ready == 'true' &&
+      needs.resolve.outputs.is_final == 'false' &&
       needs.resolve.outputs.kind == 'candidate'
     needs: resolve
     runs-on: ubuntu-latest
@@ -165,6 +166,7 @@ jobs:
     name: Create final tag and reconcile release PR
     if: >-
       needs.resolve.outputs.application_ready == 'true' &&
+      needs.resolve.outputs.is_final == 'true' &&
       needs.resolve.outputs.kind == 'final'
     needs: resolve
     runs-on: ubuntu-latest
