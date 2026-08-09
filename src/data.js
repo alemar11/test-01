@@ -4,12 +4,14 @@ const items = Object.freeze([
     name: "First item",
     status: "active",
     category: "core-service",
+    labels: Object.freeze(["featured", "read-only"]),
   }),
   Object.freeze({
     id: "item-2",
     name: "Second item",
     status: "active",
     category: "support-service",
+    labels: Object.freeze(["read-only", "support"]),
   }),
 ]);
 
