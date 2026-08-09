@@ -10,6 +10,9 @@ small, deterministic, and read-only.
 - `src/data.js` contains the frozen static fixtures, including stable
   lower-kebab item categories and deterministically ordered, immutable label
   arrays.
+- `src/fixture-quality.js` provides deterministic, read-only validation of the
+  fixture identity and scalar metadata contract; `npm run fixtures:quality`
+  exposes the same offline report as JSON and fails when violations exist.
 - `src/items-repository.js` is the only read boundary over those fixtures and
   exposes category- and label-aware `listItems()` and `findItemById(id)`.
 - `src/item-facets.js` derives a matching total and prototype-free label counts
