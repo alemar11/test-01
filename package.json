@@ -5,7 +5,7 @@
   "private": true,
   "main": "src/app.js",
   "scripts": {
-    "build": "node --check src/app.js && node --check src/data.js && node --check src/fixture-quality.js && node --check src/http-cache.js && node --check src/item-summary.js && node --check src/items-repository.js && node --check src/server.js && node --check scripts/fixture-quality-report.js",
+    "build": "node --check src/app.js && node --check src/data.js && node --check src/fixture-quality.js && node --check src/http-cache.js && node --check src/item-facets.js && node --check src/item-summary.js && node --check src/items-repository.js && node --check src/server.js && node --check scripts/fixture-quality-report.js",
     "fixtures:quality": "node scripts/fixture-quality-report.js",
     "start": "node src/server.js",
     "test": "node --test"

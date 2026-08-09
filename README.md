@@ -49,14 +49,17 @@ Available endpoints:
 - `GET /health`
 - `GET /api/items`
 - `GET /api/items/summary`
+- `GET /api/items/facets`
 - `GET /api/items/:id`
 
 Item reads are served through a read-only repository boundary over the frozen,
 ordered static fixtures. That CommonJS boundary exposes `listItems()` and
-`findItemById(id)`. Every item has a stable, non-empty lower-kebab `category`.
-The additive field is available on collection and detail reads; existing item
-values, response wrappers, and errors are unchanged. `GET /api/items` without
-query parameters returns the full collection as `{ "data": [...] }`.
+`findItemById(id)`. Every item has a stable, non-empty lower-kebab `category`
+and a non-empty array of unique lower-kebab `labels`. Fixture label arrays are
+lexicographically ordered and frozen with their owning items. The additive
+fields are available on collection and detail reads; existing item values,
+response wrappers, and errors are unchanged. `GET /api/items` without query
+parameters returns the full collection as `{ "data": [...] }`.
 `GET /api/items/:id` uses an exact string ID match and returns the matching
 fixture:
 
@@ -66,7 +69,8 @@ fixture:
     "id": "item-1",
     "name": "First item",
     "status": "active",
-    "category": "core-service"
+    "category": "core-service",
+    "labels": ["featured", "read-only"]
   }
 }
 ```
@@ -117,13 +121,15 @@ parameters keeps the original response shape exactly:
       "id": "item-1",
       "name": "First item",
       "status": "active",
-      "category": "core-service"
+      "category": "core-service",
+      "labels": ["featured", "read-only"]
     },
     {
       "id": "item-2",
       "name": "Second item",
       "status": "active",
-      "category": "support-service"
+      "category": "support-service",
+      "labels": ["read-only", "support"]
     }
   ]
 }
@@ -135,6 +141,7 @@ Queried reads support only these scalar parameters:
 | --- | --- |
 | `status` | Exact status match; blank values are invalid. |
 | `category` | Exact category match; blank values are invalid. |
+| `label` | Exact membership match against item labels; blank values are invalid. |
 | `q` | Case-insensitive name substring match after trimming; blank values are invalid. |
 | `sort` | Explicit sort field: `id`, `name`, or `status`. Omission preserves fixture order. |
 | `order` | `asc` or `desc`; defaults to `asc` when `sort` is present and is invalid without `sort`. |
@@ -145,7 +152,7 @@ All supplied filters compose before explicit sorting, and pagination happens
 last. Omission of `sort` preserves fixture order. Name sorting is
 case-insensitive; ID and status use their scalar values. Item ID is the
 ascending tie-breaker for equal sort values in both sort directions. For
-example, `GET /api/items?category=core-service&status=active&q=first&sort=name&order=desc&page=1&limit=1`
+example, `GET /api/items?label=featured&category=core-service&status=active&q=first&sort=name&order=desc&page=1&limit=1`
 returns:
 
 ```json
@@ -155,7 +162,8 @@ returns:
       "id": "item-1",
       "name": "First item",
       "status": "active",
-      "category": "core-service"
+      "category": "core-service",
+      "labels": ["featured", "read-only"]
     }
   ],
   "pagination": {
@@ -167,6 +175,7 @@ returns:
   "query": {
     "status": "active",
     "category": "core-service",
+    "label": "featured",
     "q": "first",
     "sort": "name",
     "order": "desc",
@@ -176,9 +185,10 @@ returns:
 }
 ```
 
-Every queried read includes the same seven-key `query` object. It records null
-for omitted filters and sorting, the normalized lowercase trimmed search,
-the default sort order when applicable, and numeric pagination defaults. Pages
+Every queried read includes the same eight-key `query` object. It records null
+for omitted filters and sorting, the selected exact label, the normalized
+lowercase trimmed search, the default sort order when applicable, and numeric
+pagination defaults. Pages
 beyond `totalPages` return an empty `data` array and retain truthful pagination
 and query metadata. Unsupported parameters, repeated or structured values,
 blank values, invalid sort/order combinations, non-decimal or non-positive
@@ -194,9 +204,10 @@ blank values, invalid sort/order combinations, non-decimal or non-positive
 ```
 
 Query values must be scalar. Structured values are rejected along with
-unsupported, repeated, or blank parameters. Category matching is exact and
-case-sensitive; `q` alone is trimmed and case-insensitive. Item detail, health,
-and collection reads remain GET-only; other methods and unknown routes use the
+unsupported, repeated, or blank parameters. Category and label matching are
+exact and case-sensitive; an unknown non-blank value produces an empty matching
+set. `q` alone is trimmed and case-insensitive. Item detail, health, and
+collection reads remain GET-only; other methods and unknown routes use the
 generic `not_found` response. Repeated reads are deterministic, and changing a
 decoded response cannot mutate later repository-backed reads.
 
@@ -204,14 +215,14 @@ decoded response cannot mutate later repository-backed reads.
 
 `GET /api/items/summary` reports deterministic aggregates over the complete
 repository-filtered item set. It accepts only the same scalar, non-blank
-`status`, `category`, and `q` filters described above. Status and category
-matches remain exact, while `q` is trimmed, lowercased in response metadata,
-and matched case-insensitively against item names.
+`status`, `category`, `label`, and `q` filters described above. Status,
+category, and label matches remain exact, while `q` is trimmed, lowercased in
+response metadata, and matched case-insensitively against item names.
 
 The `data` object describes the complete matching set. `insights` adds the
 total fixture count, matching count, matching status breakdown, and normalized
 filter metadata. For example,
-`GET /api/items/summary?status=active&q=second` returns:
+`GET /api/items/summary?label=support&status=active&q=second` returns:
 
 ```json
 {
@@ -233,6 +244,7 @@ filter metadata. For example,
     "filters": {
       "status": "active",
       "category": null,
+      "label": "support",
       "q": "second"
     }
   }
@@ -248,13 +260,55 @@ sorting and pagination are unsupported. Unknown, repeated, structured, or
 blank inputs return the shared HTTP 400 `invalid_query` response without
 changing later health, collection, detail, or summary reads.
 
+## Read item label facets
+
+`GET /api/items/facets` returns deterministic label counts over the complete
+matching item set. It accepts only the same scalar, non-blank `status`,
+`category`, `label`, and `q` filters as the summary endpoint. Status, category,
+and label matching are exact and case-sensitive; `q` is trimmed and matched
+case-insensitively against item names. The response records those exact or
+normalized values in `filters`.
+
+For example, `GET /api/items/facets?status=active&q=%20ITEM%20` returns:
+
+```json
+{
+  "data": {
+    "total": 2,
+    "byLabel": {
+      "featured": 1,
+      "read-only": 2,
+      "support": 1
+    }
+  },
+  "filters": {
+    "status": "active",
+    "category": null,
+    "label": null,
+    "q": "item"
+  }
+}
+```
+
+`data.total` is the complete matching item count, never a page size. Each item
+contributes once to every label it carries, so the sum of `byLabel` counts may
+legitimately exceed `data.total`. Empty matches return `total: 0` and an empty
+`byLabel` map. Sorting, ordering, pagination, repeated, structured, blank, and
+unknown query inputs return the shared HTTP 400 `invalid_query` response.
+
+Facet responses use the same strong, representation-derived cache validators
+as the other successful GET resources. Equivalent normalized searches keep
+the same representation and validator; different filters or results produce
+their own deterministic validators.
+
 ## HTTP cache validators
 
 Every successful HTTP 200 representation from `GET /health`, `GET /api/items`,
-and `GET /api/items/:id` includes a strong `ETag` derived from the exact JSON
-representation. This includes query-dependent collection results: unchanged
-representations keep the same validator, while different result bodies use
-different validators.
+`GET /api/items/summary`, `GET /api/items/facets`, and `GET /api/items/:id`
+includes a strong `ETag` derived from the exact JSON representation. This
+includes label-aware collection, summary, and facet results: unchanged
+representations keep the same validator, while different result bodies or
+normalized metadata use different validators.
 
 Clients can send that validator in `If-None-Match`. Exact matches, weak
 validators, validator lists containing a match, and `*` return HTTP 304 with an
@@ -264,7 +318,7 @@ contracts and are not assigned validators.
 
 The validators are deterministic over the package metadata and frozen fixture
 representations. They add no database, persistence, write path, expiration
-policy, or external cache, and do not cover endpoints beyond the three baseline
-GET surfaces listed above.
+policy, or external cache, and do not cover endpoints beyond the five GET
+surfaces listed above.
 
 Run the backend tests with `npm test`.

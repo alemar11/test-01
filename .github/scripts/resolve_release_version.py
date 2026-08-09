@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 
+RESOLVER_VERSION = "0.2.0"
 TAG_PATTERN = re.compile(
     r"^(?P<prefix>v?)(?P<major>0|[1-9][0-9]*)\."
     r"(?P<minor>0|[1-9][0-9]*)\."
@@ -80,6 +81,11 @@ def parse_tag(raw: str) -> ParsedTag | None:
     return ParsedTag(raw=value, version=version, canonical=value.startswith("v"))
 
 
+def is_final_tag(raw: str) -> bool:
+    parsed = parse_tag(raw)
+    return parsed is not None and parsed.canonical and parsed.version.stable
+
+
 def parse_tags(raw_tags: Iterable[str]) -> tuple[list[ParsedTag], int]:
     parsed: list[ParsedTag] = []
     ignored = 0
@@ -125,16 +131,17 @@ def latest_tag(tags: Iterable[ParsedTag]) -> ParsedTag:
     )
 
 
+def latest_stable_tag(tags: Iterable[ParsedTag]) -> ParsedTag | None:
+    stable_tags = [tag for tag in tags if tag.version.stable]
+    return max(
+        stable_tags,
+        key=lambda tag: (tag.version.precedence_key(), tag.canonical, tag.raw),
+        default=None,
+    )
+
+
 def display(tag: ParsedTag) -> str:
     return tag.version.tag if tag.canonical else tag.raw
-
-
-def active_release_bases(tags: Iterable[ParsedTag]) -> list[tuple[int, int, int]]:
-    candidate_bases = {
-        tag.version.base for tag in tags if not tag.version.stable
-    }
-    finalized_bases = {tag.version.base for tag in tags if tag.version.stable}
-    return sorted(candidate_bases - finalized_bases)
 
 
 def normalize_operation(requested_operation: str) -> str:
@@ -153,9 +160,9 @@ def infer_operation(
     proposals: dict[str, str]
 
     if ref_name == default_branch:
-        if not tags:
+        current = latest_stable_tag(tags)
+        if current is None:
             return "auto"
-        current = latest_tag(tags)
         major, minor, patch = current.version.base
         bases = {
             "patch": (major, minor, patch + 1),
@@ -209,6 +216,7 @@ def blocked(
         "release_branch": release_branch,
         "latest_tag": latest,
         "ignored_tag_count": ignored,
+        "is_final": is_final_tag(tag),
         "status": status,
         "reason": reason,
         "tag_state": "unknown",
@@ -241,13 +249,14 @@ def resolve(
 
     if ref_name == default_branch:
         context = "default"
+        stable_baseline = latest_stable_tag(tags)
         if operation == "auto":
-            if not tags:
+            if stable_baseline is None:
                 return blocked(
                     status="blocked-missing-baseline",
                     reason=(
-                        "no SemVer baseline exists; initialize it explicitly before "
-                        "using this Action"
+                        "no stable SemVer baseline exists; initialize it explicitly "
+                        "before using this Action"
                     ),
                     confirmed_tag=confirmed_tag,
                     context=context,
@@ -273,38 +282,19 @@ def resolve(
                 latest=latest,
                 ignored=ignored,
             )
-        if not tags:
+        if stable_baseline is None:
             return blocked(
                 status="blocked-missing-baseline",
                 reason=(
-                    "no SemVer baseline exists; initialize it explicitly before "
-                    "using this Action"
+                    "no stable SemVer baseline exists; initialize it explicitly "
+                    "before using this Action"
                 ),
                 confirmed_tag=confirmed_tag,
                 context=context,
                 ignored=ignored,
             )
 
-        active_branches = [
-            f"release/{base_tag(base)}" for base in active_release_bases(tags)
-        ]
-        if active_branches:
-            rendered = ", ".join(active_branches)
-            return blocked(
-                status="blocked-release-in-progress",
-                reason=(
-                    f"finish the active release line from {rendered} before "
-                    f"starting another release from {default_branch}"
-                ),
-                confirmed_tag=confirmed_tag,
-                context=context,
-                kind="candidate",
-                release_branch=(active_branches[0] if len(active_branches) == 1 else ""),
-                latest=latest,
-                ignored=ignored,
-            )
-
-        current = latest_tag(tags)
+        current = stable_baseline
         major, minor, patch = current.version.base
         bases = {
             "patch": (major, minor, patch + 1),
@@ -313,6 +303,7 @@ def resolve(
         }
         base = bases[operation]
         branch = f"release/{base_tag(base)}"
+        existing = tags_for_base(tags, base)
         final = final_for_base(tags, base)
         proposal = base_tag(base, next_rc_for_base(tags, base))
 
@@ -322,6 +313,21 @@ def resolve(
                 reason=f"{final.version.tag} already finalizes the proposed release line",
                 confirmed_tag=confirmed_tag,
                 context=context,
+                kind="candidate",
+                release_branch=branch,
+                latest=latest,
+                ignored=ignored,
+            )
+        if existing:
+            return blocked(
+                status="blocked-release-in-progress",
+                reason=(
+                    f"continue this release line from {branch}; do not create "
+                    f"another candidate for it from {default_branch}"
+                ),
+                confirmed_tag=confirmed_tag,
+                context=context,
+                tag=proposal,
                 kind="candidate",
                 release_branch=branch,
                 latest=latest,
@@ -395,6 +401,7 @@ def resolve(
                     "release_branch": branch,
                     "latest_tag": latest,
                     "ignored_tag_count": ignored,
+                    "is_final": True,
                     "status": "reconcile-existing-final",
                     "reason": (
                         "the final tag already exists; verify its commit and "
@@ -438,6 +445,7 @@ def resolve(
         "release_branch": branch,
         "latest_tag": latest,
         "ignored_tag_count": ignored,
+        "is_final": is_final_tag(proposal),
         "status": "application-ready" if confirmed_tag is not None else "proposal-ready",
         "reason": "",
         "tag_state": "absent",
@@ -454,8 +462,10 @@ def write_outputs(path: Path, result: dict[str, object]) -> None:
         "application_ready",
         "context",
         "default_branch",
+        "is_final",
         "kind",
         "release_branch",
+        "resolver_version",
         "status",
         "tag",
         "tag_snapshot",
@@ -481,10 +491,12 @@ def write_summary(
         ("Selected ref", ref_name),
         ("Selected commit", target_sha),
         ("Operation", operation),
+        ("Resolver version", result["resolver_version"]),
         ("Latest SemVer tag", result["latest_tag"] or "none"),
         ("Legacy SemVer tags", result["legacy_tag_count"]),
         ("Ignored non-SemVer tags", result["ignored_tag_count"]),
         ("Resolved tag", result["tag"] or "blocked"),
+        ("Final tag", result["is_final"]),
         ("Release branch", result["release_branch"] or "n/a"),
         ("Status", result["status"]),
     )
@@ -532,7 +544,8 @@ def write_summary(
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--version", action="version", version=RESOLVER_VERSION)
     parser.add_argument("--application-mode", action="store_true")
     parser.add_argument("--confirmed-tag", default="")
     parser.add_argument("--default-branch", required=True)
@@ -572,6 +585,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         confirmed_tag=confirmed_tag,
     )
     result["default_branch"] = args.default_branch
+    result["resolver_version"] = RESOLVER_VERSION
     result["tag_snapshot"] = args.tag_snapshot
     result["legacy_tag_count"] = sum(not tag.canonical for tag in parsed_tags)
     result["ignored_tag_count"] = ignored
@@ -584,7 +598,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         ref_name=args.ref_name,
         target_sha=args.target_sha,
     )
-    print(f"status={result['status']} tag={result['tag'] or 'blocked'}")
+    print(
+        f"status={result['status']} tag={result['tag'] or 'blocked'} "
+        f"is_final={str(result['is_final']).lower()}"
+    )
     return 0 if result["ok"] else 2
 
 

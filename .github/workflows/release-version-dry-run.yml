@@ -1,3 +1,4 @@
+# g:versioning release workflow template; resolver API 0.2.0
 name: Release version (dry run)
 
 run-name: Dry run · ${{ github.ref_name }}
@@ -49,12 +50,18 @@ on:
       default_branch:
         description: Current repository default branch
         value: ${{ jobs.resolve.outputs.default_branch }}
+      is_final:
+        description: Whether the exact resolved tag is a stable final tag
+        value: ${{ jobs.resolve.outputs.is_final }}
       kind:
         description: Candidate or final operation kind
         value: ${{ jobs.resolve.outputs.kind }}
       release_branch:
         description: Exact release branch
         value: ${{ jobs.resolve.outputs.release_branch }}
+      resolver_version:
+        description: Version of the trusted release resolver
+        value: ${{ jobs.resolve.outputs.resolver_version }}
       status:
         description: Resolver status
         value: ${{ jobs.resolve.outputs.status }}
@@ -84,8 +91,10 @@ jobs:
       application_ready: ${{ steps.resolve.outputs.application_ready }}
       context: ${{ steps.resolve.outputs.context }}
       default_branch: ${{ steps.resolve.outputs.default_branch }}
+      is_final: ${{ steps.resolve.outputs.is_final }}
       kind: ${{ steps.resolve.outputs.kind }}
       release_branch: ${{ steps.resolve.outputs.release_branch }}
+      resolver_version: ${{ steps.resolve.outputs.resolver_version }}
       status: ${{ steps.resolve.outputs.status }}
       tag: ${{ steps.resolve.outputs.tag }}
       tag_snapshot: ${{ steps.resolve.outputs.tag_snapshot }}
@@ -136,13 +145,26 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Check out only the trusted version resolver
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ steps.snapshot.outputs.default_sha }}
           sparse-checkout: .github/scripts/resolve_release_version.py
           sparse-checkout-cone-mode: false
           persist-credentials: false
           fetch-depth: 1
+
+      - name: Verify release resolver API version
+        env:
+          EXPECTED_RESOLVER_VERSION: "0.2.0"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          actual_version="$(python3 .github/scripts/resolve_release_version.py --version)"
+          if [[ "$actual_version" != "$EXPECTED_RESOLVER_VERSION" ]]; then
+            echo "Resolver version $actual_version does not match workflow API $EXPECTED_RESOLVER_VERSION." >&2
+            exit 1
+          fi
 
       - name: Resolve without reading application code
         id: resolve

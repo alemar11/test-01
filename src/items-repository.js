@@ -11,6 +11,9 @@ function listItems(filters = {}) {
       (filters.category === undefined ||
         filters.category === null ||
         item.category === filters.category) &&
+      (filters.label === undefined ||
+        filters.label === null ||
+        item.labels.includes(filters.label)) &&
       (normalizedQuery === undefined ||
         item.name.toLowerCase().includes(normalizedQuery)),
   );

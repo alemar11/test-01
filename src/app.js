@@ -2,6 +2,7 @@ const express = require("express");
 
 const { name, version } = require("../package.json");
 const { sendValidatedJson } = require("./http-cache");
+const { facetItems } = require("./item-facets");
 const { summarizeItems } = require("./item-summary");
 const { findItemById, listItems } = require("./items-repository");
 
@@ -14,6 +15,7 @@ const health = Object.freeze({
 const supportedItemQueryParameters = new Set([
   "status",
   "category",
+  "label",
   "q",
   "sort",
   "order",
@@ -22,7 +24,12 @@ const supportedItemQueryParameters = new Set([
 ]);
 const supportedItemSortFields = new Set(["id", "name", "status"]);
 const supportedItemSortOrders = new Set(["asc", "desc"]);
-const supportedSummaryQueryParameters = new Set(["status", "category", "q"]);
+const supportedSummaryQueryParameters = new Set([
+  "status",
+  "category",
+  "label",
+  "q",
+]);
 
 app.disable("x-powered-by");
 app.disable("etag");
@@ -56,18 +63,29 @@ function parseItemFilters(query, supportedParameters) {
     return null;
   }
 
-  const { status, category, q } = query;
+  const { status, category, label, q } = query;
   if (
     (status !== undefined &&
       (typeof status !== "string" || status.trim() === "")) ||
     (category !== undefined &&
       (typeof category !== "string" || category.trim() === "")) ||
+    (label !== undefined &&
+      (typeof label !== "string" || label.trim() === "")) ||
     (q !== undefined && (typeof q !== "string" || q.trim() === ""))
   ) {
     return null;
   }
 
-  return { status, category, q };
+  return { status, category, label, q };
+}
+
+function normalizeItemFilters(filters) {
+  return {
+    status: filters.status ?? null,
+    category: filters.category ?? null,
+    label: filters.label ?? null,
+    q: filters.q?.trim().toLowerCase() ?? null,
+  };
 }
 
 app.get("/health", (request, response) => {
@@ -110,9 +128,7 @@ app.get("/api/items", (request, response) => {
   const page = parsedPage ?? 1;
   const limit = parsedLimit ?? 20;
   const normalizedQuery = {
-    status: filters.status ?? null,
-    category: filters.category ?? null,
-    q: filters.q?.trim().toLowerCase() ?? null,
+    ...normalizeItemFilters(filters),
     sort: sort ?? null,
     order: sort === undefined ? null : (order ?? "asc"),
     page,
@@ -145,11 +161,7 @@ app.get("/api/items/summary", (request, response) => {
   }
 
   const allItems = listItems();
-  const normalizedFilters = {
-    status: filters.status ?? null,
-    category: filters.category ?? null,
-    q: filters.q?.trim().toLowerCase() ?? null,
-  };
+  const normalizedFilters = normalizeItemFilters(filters);
   const matchingItems = listItems(normalizedFilters);
   const summary = summarizeItems(matchingItems);
 
@@ -161,6 +173,25 @@ app.get("/api/items/summary", (request, response) => {
       byStatus: summary.byStatus,
       filters: normalizedFilters,
     },
+  });
+});
+
+app.get("/api/items/facets", (request, response) => {
+  const filters = parseItemFilters(
+    request.query,
+    supportedSummaryQueryParameters,
+  );
+  if (filters === null) {
+    invalidQuery(response);
+    return;
+  }
+
+  const normalizedFilters = normalizeItemFilters(filters);
+  const matchingItems = listItems(normalizedFilters);
+
+  sendValidatedJson(request, response, {
+    data: facetItems(matchingItems),
+    filters: normalizedFilters,
   });
 });
 
