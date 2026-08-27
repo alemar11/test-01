@@ -1,6 +1,7 @@
 const express = require("express");
 
 const { name, version } = require("../package.json");
+const capabilityManifest = require("./capabilities");
 const { sendValidatedJson } = require("./http-cache");
 const { facetItems } = require("./item-facets");
 const { summarizeItems } = require("./item-summary");
@@ -90,6 +91,15 @@ function normalizeItemFilters(filters) {
 
 app.get("/health", (request, response) => {
   sendValidatedJson(request, response, health);
+});
+
+app.get("/api/capabilities", (request, response) => {
+  if (Object.keys(request.query).length > 0) {
+    invalidQuery(response);
+    return;
+  }
+
+  sendValidatedJson(request, response, capabilityManifest);
 });
 
 app.get("/api/items", (request, response) => {
