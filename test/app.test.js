@@ -377,14 +377,29 @@ test("GET /api/capabilities is byte-stable and conditionally readable", async ()
 test("advertised paths and filter semantics match provider behavior", async () => {
   const sharedFilters =
     "status=active&category=core-service&label=featured&q=%20IRS%20";
-  const health = await get("/health");
-  const collection = await get(
-    `/api/items?${sharedFilters}&sort=name&order=desc&page=1&limit=100`,
-  );
-  const summary = await get(`/api/items/summary?${sharedFilters}`);
-  const facets = await get(`/api/items/facets?${sharedFilters}`);
-  const detail = await get("/api/items/item-1");
-  const discovery = await get("/api/capabilities");
+  const queryByCapabilityId = {
+    "item-collection":
+      `?${sharedFilters}&sort=name&order=desc&page=1&limit=100`,
+    "item-summary": `?${sharedFilters}`,
+    "item-facets": `?${sharedFilters}`,
+  };
+  const resultsByCapabilityId = Object.create(null);
+
+  for (const capability of capabilityManifest.capabilities) {
+    const path = capability.path.replace(":id", "item-1");
+    const query = queryByCapabilityId[capability.id] ?? "";
+
+    resultsByCapabilityId[capability.id] = await request(`${path}${query}`, {
+      method: capability.method,
+    });
+  }
+
+  const health = resultsByCapabilityId.health;
+  const collection = resultsByCapabilityId["item-collection"];
+  const summary = resultsByCapabilityId["item-summary"];
+  const facets = resultsByCapabilityId["item-facets"];
+  const detail = resultsByCapabilityId["item-detail"];
+  const discovery = resultsByCapabilityId["capability-discovery"];
 
   assert.equal(health.status, 200);
   assert.equal(health.body.status, "ok");
