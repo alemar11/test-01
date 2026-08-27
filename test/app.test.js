@@ -35,10 +35,28 @@ const expectedFacets = {
   byLabel: { featured: 1, "read-only": 2, support: 1 },
 };
 const expectedItemFilterControls = {
-  status: { match: "exact" },
-  category: { match: "exact" },
-  label: { match: "exact-membership" },
+  status: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
+    match: "exact",
+  },
+  category: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
+    match: "exact",
+  },
+  label: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
+    match: "exact-membership",
+  },
   q: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
     match: "case-insensitive-substring",
     normalize: ["trim", "lowercase"],
   },
@@ -53,14 +71,29 @@ const expectedCapabilityManifest = {
       path: "/api/items",
       controls: {
         ...expectedItemFilterControls,
-        sort: { values: ["id", "name", "status"] },
+        sort: {
+          type: "string",
+          cardinality: "single",
+          values: ["id", "name", "status"],
+        },
         order: {
+          type: "string",
+          cardinality: "single",
           values: ["asc", "desc"],
           default: "asc",
           requires: "sort",
         },
-        page: { minimum: 1, default: 1, defaultWhen: "any-control" },
+        page: {
+          type: "integer",
+          cardinality: "single",
+          minimum: 1,
+          maximum: Number.MAX_SAFE_INTEGER,
+          default: 1,
+          defaultWhen: "any-control",
+        },
         limit: {
+          type: "integer",
+          cardinality: "single",
           minimum: 1,
           maximum: 100,
           default: 20,
@@ -513,9 +546,14 @@ test("advertised collection values, requirements, defaults, and limits are exact
   const noControls = await get("/api/items");
   const defaults = await get("/api/items?status=active");
   const minimumPage = await get(`/api/items?page=${controls.page.minimum}`);
+  const maximumPage = await get(`/api/items?page=${controls.page.maximum}`);
   const belowMinimumPage = await get(
     `/api/items?page=${controls.page.minimum - 1}`,
   );
+  const aboveMaximumPage = await get(
+    `/api/items?page=${controls.page.maximum + 1}`,
+  );
+  const fractionalPage = await get("/api/items?page=1.5");
   const maximumLimit = await get(`/api/items?limit=${controls.limit.maximum}`);
   const belowMinimumLimit = await get(
     `/api/items?limit=${controls.limit.minimum - 1}`,
@@ -523,19 +561,52 @@ test("advertised collection values, requirements, defaults, and limits are exact
   const aboveMaximumLimit = await get(
     `/api/items?limit=${controls.limit.maximum + 1}`,
   );
+  const fractionalLimit = await get("/api/items?limit=1.5");
 
   assert.deepEqual(noControls.body, { data: expectedItems });
   assert.equal("pagination" in noControls.body, false);
   assert.equal(controls.page.defaultWhen, "any-control");
   assert.equal(controls.limit.defaultWhen, "any-control");
+  assert.equal(controls.page.type, "integer");
+  assert.equal(controls.limit.type, "integer");
+  assert.equal(controls.page.cardinality, "single");
+  assert.equal(controls.limit.cardinality, "single");
   assert.equal(defaults.body.pagination.page, controls.page.default);
   assert.equal(defaults.body.pagination.limit, controls.limit.default);
   assert.equal(minimumPage.status, 200);
+  assert.equal(maximumPage.status, 200);
   assert.equal(maximumLimit.status, 200);
   assert.equal(maximumLimit.body.pagination.limit, controls.limit.maximum);
   assert.equal(belowMinimumPage.status, 400);
+  assert.equal(aboveMaximumPage.status, 400);
+  assert.equal(fractionalPage.status, 400);
   assert.equal(belowMinimumLimit.status, 400);
   assert.equal(aboveMaximumLimit.status, 400);
+  assert.equal(fractionalLimit.status, 400);
+});
+
+test("advertised filters enforce single nonblank string inputs", async () => {
+  for (const capability of capabilityManifest.capabilities.filter(
+    ({ controls }) => controls?.status,
+  )) {
+    for (const filter of ["status", "category", "label", "q"]) {
+      const descriptor = capability.controls[filter];
+      const repeated = await get(
+        `${capability.path}?${filter}=value&${filter}=other`,
+      );
+      const blank = await get(`${capability.path}?${filter}=%20%20`);
+
+      assert.equal(descriptor.type, "string", `${capability.id}:${filter}`);
+      assert.equal(
+        descriptor.cardinality,
+        "single",
+        `${capability.id}:${filter}`,
+      );
+      assert.equal(descriptor.nonBlank, true, `${capability.id}:${filter}`);
+      assert.equal(repeated.status, 400, `${capability.id}:${filter}:repeated`);
+      assert.equal(blank.status, 400, `${capability.id}:${filter}:blank`);
+    }
+  }
 });
 
 test("capability responses resist consumer mutation", async () => {

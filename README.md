@@ -126,25 +126,54 @@ surfaces without inspecting runtime state or fixture data:
       "method": "GET",
       "path": "/api/items",
       "controls": {
-        "status": { "match": "exact" },
-        "category": { "match": "exact" },
-        "label": { "match": "exact-membership" },
+        "status": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "category": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "label": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact-membership"
+        },
         "q": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
           "match": "case-insensitive-substring",
           "normalize": ["trim", "lowercase"]
         },
-        "sort": { "values": ["id", "name", "status"] },
+        "sort": {
+          "type": "string",
+          "cardinality": "single",
+          "values": ["id", "name", "status"]
+        },
         "order": {
+          "type": "string",
+          "cardinality": "single",
           "values": ["asc", "desc"],
           "default": "asc",
           "requires": "sort"
         },
         "page": {
+          "type": "integer",
+          "cardinality": "single",
           "minimum": 1,
+          "maximum": 9007199254740991,
           "default": 1,
           "defaultWhen": "any-control"
         },
         "limit": {
+          "type": "integer",
+          "cardinality": "single",
           "minimum": 1,
           "maximum": 100,
           "default": 20,
@@ -157,10 +186,28 @@ surfaces without inspecting runtime state or fixture data:
       "method": "GET",
       "path": "/api/items/summary",
       "controls": {
-        "status": { "match": "exact" },
-        "category": { "match": "exact" },
-        "label": { "match": "exact-membership" },
+        "status": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "category": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "label": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact-membership"
+        },
         "q": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
           "match": "case-insensitive-substring",
           "normalize": ["trim", "lowercase"]
         }
@@ -171,10 +218,28 @@ surfaces without inspecting runtime state or fixture data:
       "method": "GET",
       "path": "/api/items/facets",
       "controls": {
-        "status": { "match": "exact" },
-        "category": { "match": "exact" },
-        "label": { "match": "exact-membership" },
+        "status": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "category": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "label": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact-membership"
+        },
         "q": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
           "match": "case-insensitive-substring",
           "normalize": ["trim", "lowercase"]
         }
@@ -196,10 +261,13 @@ surfaces without inspecting runtime state or fixture data:
 
 Capability IDs and array order are stable within schema version 1. The
 manifest includes only GET methods, route paths, supported controls,
-constrained values, defaults, and limits. It deliberately excludes current
-item identities and counts, write or persistence claims, timestamps, host and
-process data, environment values, and other runtime introspection. Query
-parameters are not supported on the discovery endpoint.
+scalar types and cardinality, nonblank requirements, constrained values,
+defaults, and limits. Pagination accepts only single integer values: `page`
+runs from `1` through JavaScript's maximum safe integer, while `limit` runs
+from `1` through `100`. It deliberately excludes current item identities and
+counts, write or persistence claims, timestamps, host and process data,
+environment values, and other runtime introspection. Query parameters are not
+supported on the discovery endpoint.
 
 The item collection preserves its legacy `{ "data": [...] }` response when
 no controls are supplied. Supplying any advertised collection control

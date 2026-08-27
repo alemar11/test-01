@@ -9,10 +9,28 @@ function deepFreeze(value) {
 }
 
 const itemFilterControls = {
-  status: { match: "exact" },
-  category: { match: "exact" },
-  label: { match: "exact-membership" },
+  status: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
+    match: "exact",
+  },
+  category: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
+    match: "exact",
+  },
+  label: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
+    match: "exact-membership",
+  },
   q: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
     match: "case-insensitive-substring",
     normalize: ["trim", "lowercase"],
   },
@@ -32,14 +50,29 @@ const manifest = deepFreeze({
       path: "/api/items",
       controls: {
         ...itemFilterControls,
-        sort: { values: ["id", "name", "status"] },
+        sort: {
+          type: "string",
+          cardinality: "single",
+          values: ["id", "name", "status"],
+        },
         order: {
+          type: "string",
+          cardinality: "single",
           values: ["asc", "desc"],
           default: "asc",
           requires: "sort",
         },
-        page: { minimum: 1, default: 1, defaultWhen: "any-control" },
+        page: {
+          type: "integer",
+          cardinality: "single",
+          minimum: 1,
+          maximum: Number.MAX_SAFE_INTEGER,
+          default: 1,
+          defaultWhen: "any-control",
+        },
         limit: {
+          type: "integer",
+          cardinality: "single",
           minimum: 1,
           maximum: 100,
           default: 20,
