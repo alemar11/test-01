@@ -13,6 +13,15 @@ function isValidLowerKebab(value) {
   return typeof value === "string" && LOWER_KEBAB_PATTERN.test(value);
 }
 
+function isJsonSafeLabelDiagnosticValue(value) {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  );
+}
+
 function findDuplicateIdViolations(fixtures) {
   const indexesById = new Map();
 
@@ -86,6 +95,7 @@ function findLabelViolations(fixtures) {
 
     const indexesByLabel = new Map();
     const fixtureViolations = [];
+    let previousValidLabel = null;
 
     for (let labelIndex = 0; labelIndex < labels.length; labelIndex += 1) {
       const label = labels[labelIndex];
@@ -107,22 +117,21 @@ function findLabelViolations(fixtures) {
       labelIndexes.push(labelIndex);
       indexesByLabel.set(label, labelIndexes);
 
-      if (
-        labelIndex > 0 &&
-        isValidLowerKebab(labels[labelIndex - 1]) &&
-        isValidLowerKebab(label) &&
-        labels[labelIndex - 1] > label
-      ) {
-        fixtureViolations.push({
-          labelIndex,
-          order: 2,
-          violation: {
-            code: "unsorted_label",
-            field: "labels",
-            index,
+      if (isValidLowerKebab(label)) {
+        if (previousValidLabel !== null && previousValidLabel > label) {
+          fixtureViolations.push({
             labelIndex,
-          },
-        });
+            order: 2,
+            violation: {
+              code: "unsorted_label",
+              field: "labels",
+              index,
+              labelIndex,
+            },
+          });
+        }
+
+        previousValidLabel = label;
       }
     }
 
@@ -135,7 +144,7 @@ function findLabelViolations(fixtures) {
             code: "duplicate_label",
             field: "labels",
             index,
-            label,
+            ...(isJsonSafeLabelDiagnosticValue(label) ? { label } : {}),
             labelIndexes,
           },
         });

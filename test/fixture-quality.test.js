@@ -169,7 +169,7 @@ test("all label-list contract violations are reported in stable order", () => {
     { ...validScalars, labels: null },
     { ...validScalars, labels: "valid-label" },
     { ...validScalars, labels: [] },
-    { ...validScalars, labels: ["valid-label", "UPPER", 42, 42] },
+    { ...validScalars, labels: ["z", "UPPER", 42, 42, "a"] },
     { ...validScalars, labels: ["beta", "alpha", "beta", "alpha"] },
   ].map((fixture, index) => ({ ...fixture, id: `item-${index}` }));
   const labelsBefore = invalidFixtures.map((fixture) =>
@@ -208,6 +208,12 @@ test("all label-list contract violations are reported in stable order", () => {
         labelIndex: 3,
       },
       {
+        code: "unsorted_label",
+        field: "labels",
+        index: 4,
+        labelIndex: 4,
+      },
+      {
         code: "duplicate_label",
         field: "labels",
         index: 5,
@@ -244,6 +250,45 @@ test("all label-list contract violations are reported in stable order", () => {
     ),
     labelsBefore,
   );
+});
+
+test("duplicate malformed labels keep CLI output JSON-safe", () => {
+  const circularLabel = {};
+  circularLabel.self = circularLabel;
+  const invalidFixtures = [
+    {
+      id: "item-1",
+      name: "Valid",
+      status: "active",
+      category: "valid-category",
+      labels: [1n, 1n, circularLabel, circularLabel],
+    },
+  ];
+
+  const result = captureReport(invalidFixtures);
+
+  assert.equal(result.exitCode, 1);
+  assert.deepEqual(JSON.parse(result.output), {
+    inspected: 1,
+    violations: [
+      { code: "invalid_label", field: "labels", index: 0, labelIndex: 0 },
+      {
+        code: "duplicate_label",
+        field: "labels",
+        index: 0,
+        labelIndexes: [0, 1],
+      },
+      { code: "invalid_label", field: "labels", index: 0, labelIndex: 1 },
+      { code: "invalid_label", field: "labels", index: 0, labelIndex: 2 },
+      {
+        code: "duplicate_label",
+        field: "labels",
+        index: 0,
+        labelIndexes: [2, 3],
+      },
+      { code: "invalid_label", field: "labels", index: 0, labelIndex: 3 },
+    ],
+  });
 });
 
 test("CLI behavior prints JSON and returns success for valid fixtures", () => {
