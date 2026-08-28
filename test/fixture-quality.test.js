@@ -291,6 +291,27 @@ test("duplicate malformed labels keep CLI output JSON-safe", () => {
   });
 });
 
+test("labels reject digit-bearing lower-kebab values", () => {
+  assert.deepEqual(
+    createFixtureQualityReport([
+      {
+        id: "item-1",
+        name: "Valid",
+        status: "active2",
+        category: "category-2",
+        labels: ["123", "service-2"],
+      },
+    ]),
+    {
+      inspected: 1,
+      violations: [
+        { code: "invalid_label", field: "labels", index: 0, labelIndex: 0 },
+        { code: "invalid_label", field: "labels", index: 0, labelIndex: 1 },
+      ],
+    },
+  );
+});
+
 test("CLI behavior prints JSON and returns success for valid fixtures", () => {
   const run = () =>
     spawnSync(process.execPath, ["scripts/fixture-quality-report.js"], {

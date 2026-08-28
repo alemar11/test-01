@@ -1,4 +1,5 @@
 const LOWER_KEBAB_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const LABEL_PATTERN = /^[a-z]+(?:-[a-z]+)*$/;
 const REQUIRED_FIELDS = ["id", "name", "status", "category"];
 
 function isValidId(value) {
@@ -11,6 +12,10 @@ function isValidName(value) {
 
 function isValidLowerKebab(value) {
   return typeof value === "string" && LOWER_KEBAB_PATTERN.test(value);
+}
+
+function isValidLabel(value) {
+  return typeof value === "string" && LABEL_PATTERN.test(value);
 }
 
 function isJsonSafeLabelDiagnosticValue(value) {
@@ -100,7 +105,7 @@ function findLabelViolations(fixtures) {
     for (let labelIndex = 0; labelIndex < labels.length; labelIndex += 1) {
       const label = labels[labelIndex];
 
-      if (!isValidLowerKebab(label)) {
+      if (!isValidLabel(label)) {
         fixtureViolations.push({
           labelIndex,
           order: 0,
@@ -117,7 +122,7 @@ function findLabelViolations(fixtures) {
       labelIndexes.push(labelIndex);
       indexesByLabel.set(label, labelIndexes);
 
-      if (isValidLowerKebab(label)) {
+      if (isValidLabel(label)) {
         if (previousValidLabel !== null && previousValidLabel > label) {
           fixtureViolations.push({
             labelIndex,
