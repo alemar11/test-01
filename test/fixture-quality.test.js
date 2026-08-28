@@ -169,7 +169,7 @@ test("all label-list contract violations are reported in stable order", () => {
     { ...validScalars, labels: null },
     { ...validScalars, labels: "valid-label" },
     { ...validScalars, labels: [] },
-    { ...validScalars, labels: ["valid-label", "UPPER", 42] },
+    { ...validScalars, labels: ["valid-label", "UPPER", 42, 42] },
     { ...validScalars, labels: ["beta", "alpha", "beta", "alpha"] },
   ].map((fixture, index) => ({ ...fixture, id: `item-${index}` }));
   const labelsBefore = invalidFixtures.map((fixture) =>
@@ -193,6 +193,19 @@ test("all label-list contract violations are reported in stable order", () => {
         field: "labels",
         index: 4,
         labelIndex: 2,
+      },
+      {
+        code: "duplicate_label",
+        field: "labels",
+        index: 4,
+        label: 42,
+        labelIndexes: [2, 3],
+      },
+      {
+        code: "invalid_label",
+        field: "labels",
+        index: 4,
+        labelIndex: 3,
       },
       {
         code: "duplicate_label",

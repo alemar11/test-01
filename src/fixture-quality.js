@@ -103,11 +103,9 @@ function findLabelViolations(fixtures) {
         });
       }
 
-      if (typeof label === "string") {
-        const labelIndexes = indexesByLabel.get(label) ?? [];
-        labelIndexes.push(labelIndex);
-        indexesByLabel.set(label, labelIndexes);
-      }
+      const labelIndexes = indexesByLabel.get(label) ?? [];
+      labelIndexes.push(labelIndex);
+      indexesByLabel.set(label, labelIndexes);
 
       if (
         labelIndex > 0 &&
