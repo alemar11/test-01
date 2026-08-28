@@ -38,11 +38,15 @@ access, and prints deterministic JSON. A valid fixture set exits successfully:
 The reusable `createFixtureQualityReport(fixtures)` function is exported from
 `src/fixture-quality.js`. It reports every duplicate valid ID first, sorted by
 ID, followed by invalid `id`, `name`, `status`, and `category` fields in fixture
-and field order. IDs must be non-empty strings; names must be non-empty strings
-without surrounding whitespace; statuses and categories must be non-empty
-lower-kebab strings. Any violation causes the CLI behavior to return a non-zero
-exit status. Neither the programmatic function nor the command mutates or
-repairs fixture data.
+and field order, then label-list violations in stable fixture-and-label order.
+IDs must be non-empty strings; names must be non-empty strings without
+surrounding whitespace; statuses and categories must be non-empty lower-kebab
+strings. `labels` must be a non-empty array of unique lower-kebab strings in
+lexicographic order. Diagnostics distinguish malformed or empty label lists,
+invalid label values, duplicate values and their indexes, and each out-of-order
+label index. Any violation causes the CLI behavior to return a non-zero exit
+status. Neither the programmatic function nor the command mutates or repairs
+fixture data.
 
 Available endpoints:
 
