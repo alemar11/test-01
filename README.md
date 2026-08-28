@@ -430,14 +430,14 @@ sorting and pagination are unsupported. Unknown, repeated, structured, or
 blank inputs return the shared HTTP 400 `invalid_query` response without
 changing later health, collection, detail, or summary reads.
 
-## Read item label facets
+## Read item category and label facets
 
-`GET /api/items/facets` returns deterministic label counts over the complete
-matching item set. It accepts only the same scalar, non-blank `status`,
-`category`, `label`, and `q` filters as the summary endpoint. Status, category,
-and label matching are exact and case-sensitive; `q` is trimmed and matched
-case-insensitively against item names. The response records those exact or
-normalized values in `filters`.
+`GET /api/items/facets` returns deterministic category and label counts over
+the complete matching item set. It accepts only the same scalar, non-blank
+`status`, `category`, `label`, and `q` filters as the summary endpoint. Status,
+category, and label matching are exact and case-sensitive; `q` is trimmed and
+matched case-insensitively against item names. The response records those exact
+or normalized values in `filters`.
 
 For example, `GET /api/items/facets?status=active&q=%20ITEM%20` returns:
 
@@ -449,6 +449,10 @@ For example, `GET /api/items/facets?status=active&q=%20ITEM%20` returns:
       "featured": 1,
       "read-only": 2,
       "support": 1
+    },
+    "byCategory": {
+      "core-service": 1,
+      "support-service": 1
     }
   },
   "filters": {
@@ -461,9 +465,11 @@ For example, `GET /api/items/facets?status=active&q=%20ITEM%20` returns:
 ```
 
 `data.total` is the complete matching item count, never a page size. Each item
-contributes once to every label it carries, so the sum of `byLabel` counts may
-legitimately exceed `data.total`. Empty matches return `total: 0` and an empty
-`byLabel` map. Sorting, ordering, pagination, repeated, structured, blank, and
+contributes exactly once to its category, so deterministic non-negative integer
+`byCategory` counts sum to `data.total`. Each item also contributes once to
+every label it carries, so the sum of `byLabel` counts may legitimately exceed
+`data.total`. Empty matches return `total: 0` and empty `byCategory` and
+`byLabel` maps. Sorting, ordering, pagination, repeated, structured, blank, and
 unknown query inputs return the shared HTTP 400 `invalid_query` response.
 
 Facet responses use the same strong, representation-derived cache validators

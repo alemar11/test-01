@@ -33,6 +33,7 @@ const expectedSummary = {
 const expectedFacets = {
   total: 2,
   byLabel: { featured: 1, "read-only": 2, support: 1 },
+  byCategory: { "core-service": 1, "support-service": 1 },
 };
 const expectedItemFilterControls = {
   status: {
@@ -226,21 +227,30 @@ test("item summaries safely count keys inherited by ordinary objects", () => {
   );
 });
 
-test("item facets safely count every label in deterministic order", () => {
+test("item facets safely count every category and label", () => {
   const facets = facetItems([
-    { labels: ["constructor", "shared"] },
-    { labels: ["__proto__", "shared"] },
+    { category: "constructor", labels: ["constructor", "shared"] },
+    { category: "__proto__", labels: ["__proto__", "shared"] },
   ]);
   const serializedFacets = JSON.parse(JSON.stringify(facets));
 
   assert.equal(Object.getPrototypeOf(facets.byLabel), null);
+  assert.equal(Object.getPrototypeOf(facets.byCategory), null);
   assert.deepEqual(serializedFacets, {
     total: 2,
     byLabel: { constructor: 1, shared: 2, ["__proto__"]: 1 },
+    byCategory: { constructor: 1, ["__proto__"]: 1 },
   });
   assert.equal(
     Object.values(facets.byLabel).reduce((total, count) => total + count, 0),
     4,
+  );
+  assert.equal(
+    Object.values(facets.byCategory).reduce(
+      (total, count) => total + count,
+      0,
+    ),
+    facets.total,
   );
 });
 
@@ -472,7 +482,11 @@ test("advertised paths and filter semantics match provider behavior", async () =
   assert.deepEqual(
     facets.body,
     expectedFacetResponse({
-      data: { total: 1, byLabel: { featured: 1, "read-only": 1 } },
+      data: {
+        total: 1,
+        byLabel: { featured: 1, "read-only": 1 },
+        byCategory: { "core-service": 1 },
+      },
       filters: {
         status: "active",
         category: "core-service",
@@ -696,13 +710,30 @@ test("GET /api/items/summary returns deterministic full-set counts", async () =>
   );
 });
 
-test("GET /api/items/facets returns deterministic full-set label counts", async () => {
+test("GET /api/items/facets returns deterministic full-set facet counts", async () => {
   const firstResult = await get("/api/items/facets");
   const secondResult = await get("/api/items/facets");
 
   assert.equal(firstResult.status, 200);
   assert.deepEqual(firstResult.body, expectedFacetResponse());
   assert.deepEqual(secondResult.body, firstResult.body);
+  assert.deepEqual(Object.keys(firstResult.body.data), [
+    "total",
+    "byLabel",
+    "byCategory",
+  ]);
+  assert.ok(
+    Object.values(firstResult.body.data.byCategory).every(
+      (count) => Number.isInteger(count) && count >= 0,
+    ),
+  );
+  assert.equal(
+    Object.values(firstResult.body.data.byCategory).reduce(
+      (total, count) => total + count,
+      0,
+    ),
+    firstResult.body.data.total,
+  );
   assert.ok(
     Object.values(firstResult.body.data.byLabel).reduce(
       (total, count) => total + count,
@@ -720,7 +751,11 @@ test("GET /api/items/facets composes exact filters and normalized search", async
   assert.deepEqual(
     result.body,
     expectedFacetResponse({
-      data: { total: 1, byLabel: { "read-only": 1, support: 1 } },
+      data: {
+        total: 1,
+        byLabel: { "read-only": 1, support: 1 },
+        byCategory: { "support-service": 1 },
+      },
       filters: {
         status: "active",
         category: "support-service",
@@ -738,7 +773,7 @@ test("GET /api/items/facets returns an empty map for zero matches", async () => 
   assert.deepEqual(
     result.body,
     expectedFacetResponse({
-      data: { total: 0, byLabel: {} },
+      data: { total: 0, byLabel: {}, byCategory: {} },
       filters: { label: "FEATURED", q: "missing" },
     }),
   );
@@ -753,14 +788,14 @@ test("GET /api/items/facets preserves exact status and category matching", async
   assert.deepEqual(
     paddedStatus.body,
     expectedFacetResponse({
-      data: { total: 0, byLabel: {} },
+      data: { total: 0, byLabel: {}, byCategory: {} },
       filters: { status: " active " },
     }),
   );
   assert.deepEqual(
     differentCategoryCase.body,
     expectedFacetResponse({
-      data: { total: 0, byLabel: {} },
+      data: { total: 0, byLabel: {}, byCategory: {} },
       filters: { category: "CORE-SERVICE" },
     }),
   );
