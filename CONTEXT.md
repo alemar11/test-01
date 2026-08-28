@@ -18,8 +18,9 @@ small, deterministic, and read-only.
   exposes the same offline report as JSON and fails when violations exist.
 - `src/items-repository.js` is the only read boundary over those fixtures and
   exposes category- and label-aware `listItems()` and `findItemById(id)`.
-- `src/item-facets.js` derives a matching total and prototype-free label counts
-  from a repository result without introducing another fixture-read boundary.
+- `src/item-facets.js` derives a matching total and prototype-free category and
+  label counts from a repository result without introducing another
+  fixture-read boundary.
 - `src/item-summary.js` derives totals and prototype-free grouping maps from a
   repository result without introducing another fixture-read boundary.
 - `GET /api/items/summary` aggregates the complete `listItems()` result after
@@ -27,10 +28,10 @@ small, deterministic, and read-only.
   reports matching-set status and category maps plus query-aware global,
   matching, and normalized-filter insights, and does not accept sorting or
   pagination.
-- `GET /api/items/facets` reports deterministic label counts and a matching
-  total over the complete repository-filtered set. It shares the summary
-  filters and validation rules, supports deterministic cache validators, and
-  does not accept sorting or pagination.
+- `GET /api/items/facets` reports deterministic category and label counts plus
+  a matching total over the complete repository-filtered set. It shares the
+  summary filters and validation rules, supports deterministic cache
+  validators, and does not accept sorting or pagination.
 - `GET /api/capabilities` exposes the schema version 1 capability manifest in
   stable order with deterministic cache validators. It omits fixture-instance
   inventory, volatile metadata, writes, persistence, and runtime introspection.
