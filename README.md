@@ -47,6 +47,7 @@ repairs fixture data.
 Available endpoints:
 
 - `GET /health`
+- `GET /api/capabilities`
 - `GET /api/items`
 - `GET /api/items/summary`
 - `GET /api/items/facets`
@@ -108,6 +109,175 @@ The liveness signal means the process answered the request. Readiness means the
 dependency-free static API contract is available to serve requests. The
 response deliberately omits volatile runtime, host, process, environment, and
 external-dependency details.
+
+## Discover provider capabilities
+
+`GET /api/capabilities` returns a deliberately small, schema-versioned
+manifest for consumers that need to discover this provider's compatible read
+surfaces without inspecting runtime state or fixture data:
+
+```json
+{
+  "schemaVersion": 1,
+  "capabilities": [
+    { "id": "health", "method": "GET", "path": "/health" },
+    {
+      "id": "item-collection",
+      "method": "GET",
+      "path": "/api/items",
+      "controls": {
+        "status": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "category": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "label": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact-membership"
+        },
+        "q": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "case-insensitive-substring",
+          "normalize": ["trim", "lowercase"]
+        },
+        "sort": {
+          "type": "string",
+          "cardinality": "single",
+          "values": ["id", "name", "status"]
+        },
+        "order": {
+          "type": "string",
+          "cardinality": "single",
+          "values": ["asc", "desc"],
+          "default": "asc",
+          "requires": "sort"
+        },
+        "page": {
+          "type": "integer",
+          "cardinality": "single",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "default": 1,
+          "defaultWhen": "any-control"
+        },
+        "limit": {
+          "type": "integer",
+          "cardinality": "single",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20,
+          "defaultWhen": "any-control"
+        }
+      }
+    },
+    {
+      "id": "item-summary",
+      "method": "GET",
+      "path": "/api/items/summary",
+      "controls": {
+        "status": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "category": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "label": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact-membership"
+        },
+        "q": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "case-insensitive-substring",
+          "normalize": ["trim", "lowercase"]
+        }
+      }
+    },
+    {
+      "id": "item-facets",
+      "method": "GET",
+      "path": "/api/items/facets",
+      "controls": {
+        "status": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "category": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact"
+        },
+        "label": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "exact-membership"
+        },
+        "q": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "match": "case-insensitive-substring",
+          "normalize": ["trim", "lowercase"]
+        }
+      }
+    },
+    {
+      "id": "item-detail",
+      "method": "GET",
+      "path": "/api/items/:id"
+    },
+    {
+      "id": "capability-discovery",
+      "method": "GET",
+      "path": "/api/capabilities"
+    }
+  ]
+}
+```
+
+Capability IDs and array order are stable within schema version 1. The
+manifest includes only GET methods, route paths, supported controls,
+scalar types and cardinality, nonblank requirements, constrained values,
+defaults, and limits. Pagination accepts only single integer values: `page`
+runs from `1` through JavaScript's maximum safe integer, while `limit` runs
+from `1` through `100`. It deliberately excludes current item identities and
+counts, write or persistence claims, timestamps, host and process data,
+environment values, and other runtime introspection. Query parameters are not
+supported on the discovery endpoint.
+
+The item collection preserves its legacy `{ "data": [...] }` response when
+no controls are supplied. Supplying any advertised collection control
+activates the queried response, where omitted `page` and `limit` controls
+default to `1` and `20` respectively; this condition is represented by
+`defaultWhen`.
+
+The response is immutable in-process and byte-stable across unchanged reads.
+It uses the same strong representation-derived `ETag` and conditional-read
+behavior as the other successful GET resources.
 
 ## Read items
 
@@ -303,12 +473,13 @@ their own deterministic validators.
 
 ## HTTP cache validators
 
-Every successful HTTP 200 representation from `GET /health`, `GET /api/items`,
-`GET /api/items/summary`, `GET /api/items/facets`, and `GET /api/items/:id`
-includes a strong `ETag` derived from the exact JSON representation. This
-includes label-aware collection, summary, and facet results: unchanged
-representations keep the same validator, while different result bodies or
-normalized metadata use different validators.
+Every successful HTTP 200 representation from `GET /health`,
+`GET /api/capabilities`, `GET /api/items`, `GET /api/items/summary`,
+`GET /api/items/facets`, and `GET /api/items/:id` includes a strong `ETag`
+derived from the exact JSON representation. This includes capability,
+label-aware collection, summary, and facet results: unchanged representations
+keep the same validator, while different result bodies or normalized metadata
+use different validators.
 
 Clients can send that validator in `If-None-Match`. Exact matches, weak
 validators, validator lists containing a match, and `*` return HTTP 304 with an
@@ -316,9 +487,8 @@ empty body and the current `ETag`; non-matches return the ordinary HTTP 200 JSON
 body and validator. Error responses retain their existing status and JSON
 contracts and are not assigned validators.
 
-The validators are deterministic over the package metadata and frozen fixture
-representations. They add no database, persistence, write path, expiration
-policy, or external cache, and do not cover endpoints beyond the five GET
-surfaces listed above.
+The validators are deterministic over immutable representations. They add no
+database, persistence, write path, expiration policy, or external cache, and
+do not cover endpoints beyond the six GET surfaces listed above.
 
 Run the backend tests with `npm test`.

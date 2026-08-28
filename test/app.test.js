@@ -1,8 +1,10 @@
 const assert = require("node:assert/strict");
+const { createHash } = require("node:crypto");
 const { test } = require("node:test");
 
 const packageMetadata = require("../package.json");
 const app = require("../src/app");
+const capabilityManifest = require("../src/capabilities");
 const { facetItems } = require("../src/item-facets");
 const { summarizeItems } = require("../src/item-summary");
 const itemsRepository = require("../src/items-repository");
@@ -32,9 +34,156 @@ const expectedFacets = {
   total: 2,
   byLabel: { featured: 1, "read-only": 2, support: 1 },
 };
+const expectedItemFilterControls = {
+  status: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
+    match: "exact",
+  },
+  category: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
+    match: "exact",
+  },
+  label: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
+    match: "exact-membership",
+  },
+  q: {
+    type: "string",
+    cardinality: "single",
+    nonBlank: true,
+    match: "case-insensitive-substring",
+    normalize: ["trim", "lowercase"],
+  },
+};
+const expectedCapabilityManifest = {
+  schemaVersion: 1,
+  capabilities: [
+    { id: "health", method: "GET", path: "/health" },
+    {
+      id: "item-collection",
+      method: "GET",
+      path: "/api/items",
+      controls: {
+        ...expectedItemFilterControls,
+        sort: {
+          type: "string",
+          cardinality: "single",
+          values: ["id", "name", "status"],
+        },
+        order: {
+          type: "string",
+          cardinality: "single",
+          values: ["asc", "desc"],
+          default: "asc",
+          requires: "sort",
+        },
+        page: {
+          type: "integer",
+          cardinality: "single",
+          minimum: 1,
+          maximum: Number.MAX_SAFE_INTEGER,
+          default: 1,
+          defaultWhen: "any-control",
+        },
+        limit: {
+          type: "integer",
+          cardinality: "single",
+          minimum: 1,
+          maximum: 100,
+          default: 20,
+          defaultWhen: "any-control",
+        },
+      },
+    },
+    {
+      id: "item-summary",
+      method: "GET",
+      path: "/api/items/summary",
+      controls: { ...expectedItemFilterControls },
+    },
+    {
+      id: "item-facets",
+      method: "GET",
+      path: "/api/items/facets",
+      controls: { ...expectedItemFilterControls },
+    },
+    {
+      id: "item-detail",
+      method: "GET",
+      path: "/api/items/:id",
+    },
+    {
+      id: "capability-discovery",
+      method: "GET",
+      path: "/api/capabilities",
+    },
+  ],
+};
 
 let server;
 let baseUrl;
+
+function assertDeepFrozen(value) {
+  assert.equal(Object.isFrozen(value), true);
+
+  for (const nestedValue of Object.values(value)) {
+    if (nestedValue !== null && typeof nestedValue === "object") {
+      assertDeepFrozen(nestedValue);
+    }
+  }
+}
+
+test("capability manifest exposes an exact immutable schema version 1 contract", () => {
+  assert.deepEqual(capabilityManifest, expectedCapabilityManifest);
+  assertDeepFrozen(capabilityManifest);
+
+  const capabilityIds = capabilityManifest.capabilities.map(({ id }) => id);
+  assert.equal(new Set(capabilityIds).size, capabilityIds.length);
+  assert.deepEqual(capabilityIds, [
+    "health",
+    "item-collection",
+    "item-summary",
+    "item-facets",
+    "item-detail",
+    "capability-discovery",
+  ]);
+  assert.throws(() => {
+    capabilityManifest.capabilities.push({ id: "write" });
+  }, TypeError);
+  assert.throws(() => {
+    Object.defineProperty(capabilityManifest.capabilities[0], "id", {
+      value: "changed",
+    });
+  }, TypeError);
+
+  const representation = JSON.stringify(capabilityManifest);
+  for (const excludedValue of [
+    "item-1",
+    "First item",
+    "active",
+    "core-service",
+    "featured",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "generatedAt",
+    "timestamp",
+    "runtime",
+    "process",
+    "environment",
+    "database",
+    "persistence",
+  ]) {
+    assert.equal(representation.includes(excludedValue), false, excludedValue);
+  }
+});
 
 test("item repository exposes the exact read API", () => {
   assert.deepEqual(Object.keys(itemsRepository).sort(), [
@@ -231,6 +380,260 @@ function expectedFacetResponse({ data = expectedFacets, filters = {} } = {}) {
     },
   };
 }
+
+test("GET /api/capabilities is byte-stable and conditionally readable", async () => {
+  const firstResult = await get("/api/capabilities");
+  const secondResult = await get("/api/capabilities");
+  const representation = JSON.stringify(expectedCapabilityManifest);
+  const expectedEtag = `"sha256-${createHash("sha256")
+    .update(representation)
+    .digest("hex")}"`;
+
+  assert.equal(firstResult.status, 200);
+  assert.equal(secondResult.status, 200);
+  assert.deepEqual(firstResult.body, expectedCapabilityManifest);
+  assert.equal(firstResult.text, representation);
+  assert.equal(secondResult.text, representation);
+  assert.equal(firstResult.headers.get("etag"), expectedEtag);
+  assert.equal(secondResult.headers.get("etag"), expectedEtag);
+
+  const conditionalResult = await request("/api/capabilities", {
+    headers: { "If-None-Match": expectedEtag },
+  });
+
+  assert.equal(conditionalResult.status, 304);
+  assert.equal(conditionalResult.body, null);
+  assert.equal(conditionalResult.text, "");
+  assert.equal(conditionalResult.headers.get("etag"), expectedEtag);
+});
+
+test("advertised paths and filter semantics match provider behavior", async () => {
+  const sharedFilters =
+    "status=active&category=core-service&label=featured&q=%20IRS%20";
+  const queryByCapabilityId = {
+    "item-collection":
+      `?${sharedFilters}&sort=name&order=desc&page=1&limit=100`,
+    "item-summary": `?${sharedFilters}`,
+    "item-facets": `?${sharedFilters}`,
+  };
+  const resultsByCapabilityId = Object.create(null);
+
+  for (const capability of capabilityManifest.capabilities) {
+    const path = capability.path.replace(":id", "item-1");
+    const query = queryByCapabilityId[capability.id] ?? "";
+
+    resultsByCapabilityId[capability.id] = await request(`${path}${query}`, {
+      method: capability.method,
+    });
+  }
+
+  const health = resultsByCapabilityId.health;
+  const collection = resultsByCapabilityId["item-collection"];
+  const summary = resultsByCapabilityId["item-summary"];
+  const facets = resultsByCapabilityId["item-facets"];
+  const detail = resultsByCapabilityId["item-detail"];
+  const discovery = resultsByCapabilityId["capability-discovery"];
+
+  assert.equal(health.status, 200);
+  assert.equal(health.body.status, "ok");
+  assert.deepEqual(collection.body, {
+    data: [expectedItems[0]],
+    pagination: { page: 1, limit: 100, total: 1, totalPages: 1 },
+    query: expectedQuery({
+      status: "active",
+      category: "core-service",
+      label: "featured",
+      q: "irs",
+      sort: "name",
+      order: "desc",
+      limit: 100,
+    }),
+  });
+  assert.deepEqual(
+    summary.body,
+    expectedSummaryResponse({
+      data: {
+        total: 1,
+        byStatus: { active: 1 },
+        byCategory: { "core-service": 1 },
+      },
+      insights: {
+        matching: 1,
+        byStatus: { active: 1 },
+        filters: {
+          status: "active",
+          category: "core-service",
+          label: "featured",
+          q: "irs",
+        },
+      },
+    }),
+  );
+  assert.deepEqual(
+    facets.body,
+    expectedFacetResponse({
+      data: { total: 1, byLabel: { featured: 1, "read-only": 1 } },
+      filters: {
+        status: "active",
+        category: "core-service",
+        label: "featured",
+        q: "irs",
+      },
+    }),
+  );
+  assert.deepEqual(detail.body, { data: expectedItems[0] });
+  assert.deepEqual(discovery.body, expectedCapabilityManifest);
+
+  for (const [path, readTotal] of [
+    ["/api/items?status=ACTIVE", (body) => body.pagination.total],
+    ["/api/items?category=CORE-SERVICE", (body) => body.pagination.total],
+    ["/api/items?label=FEATURED", (body) => body.pagination.total],
+    ["/api/items/summary?status=ACTIVE", (body) => body.data.total],
+    ["/api/items/summary?category=CORE-SERVICE", (body) => body.data.total],
+    ["/api/items/summary?label=FEATURED", (body) => body.data.total],
+    ["/api/items/facets?status=ACTIVE", (body) => body.data.total],
+    ["/api/items/facets?category=CORE-SERVICE", (body) => body.data.total],
+    ["/api/items/facets?label=FEATURED", (body) => body.data.total],
+  ]) {
+    const result = await get(path);
+
+    assert.equal(result.status, 200, path);
+    assert.equal(readTotal(result.body), 0, path);
+  }
+});
+
+test("advertised collection values, requirements, defaults, and limits are exact", async () => {
+  const controls = expectedCapabilityManifest.capabilities.find(
+    ({ id }) => id === "item-collection",
+  ).controls;
+  const expectedDescendingIds = {
+    id: ["item-2", "item-1"],
+    name: ["item-2", "item-1"],
+    status: ["item-1", "item-2"],
+  };
+
+  for (const sort of controls.sort.values) {
+    const result = await get(`/api/items?sort=${sort}&order=desc`);
+
+    assert.equal(result.status, 200, sort);
+    assert.deepEqual(
+      result.body.data.map(({ id }) => id),
+      expectedDescendingIds[sort],
+      sort,
+    );
+  }
+
+  const ascending = await get("/api/items?sort=id&order=asc");
+  const descending = await get("/api/items?sort=id&order=desc");
+  const defaultOrder = await get("/api/items?sort=id");
+  const missingSort = await get("/api/items?order=asc");
+  const unsupportedSort = await get("/api/items?sort=createdAt");
+  const unsupportedOrder = await get("/api/items?sort=id&order=sideways");
+
+  assert.deepEqual(
+    ascending.body.data.map(({ id }) => id),
+    ["item-1", "item-2"],
+  );
+  assert.deepEqual(
+    descending.body.data.map(({ id }) => id),
+    ["item-2", "item-1"],
+  );
+  assert.equal(defaultOrder.body.query.order, controls.order.default);
+  assert.equal(missingSort.status, 400);
+  assert.equal(unsupportedSort.status, 400);
+  assert.equal(unsupportedOrder.status, 400);
+
+  const noControls = await get("/api/items");
+  const defaults = await get("/api/items?status=active");
+  const minimumPage = await get(`/api/items?page=${controls.page.minimum}`);
+  const maximumPage = await get(`/api/items?page=${controls.page.maximum}`);
+  const belowMinimumPage = await get(
+    `/api/items?page=${controls.page.minimum - 1}`,
+  );
+  const aboveMaximumPage = await get(
+    `/api/items?page=${controls.page.maximum + 1}`,
+  );
+  const fractionalPage = await get("/api/items?page=1.5");
+  const maximumLimit = await get(`/api/items?limit=${controls.limit.maximum}`);
+  const belowMinimumLimit = await get(
+    `/api/items?limit=${controls.limit.minimum - 1}`,
+  );
+  const aboveMaximumLimit = await get(
+    `/api/items?limit=${controls.limit.maximum + 1}`,
+  );
+  const fractionalLimit = await get("/api/items?limit=1.5");
+
+  assert.deepEqual(noControls.body, { data: expectedItems });
+  assert.equal("pagination" in noControls.body, false);
+  assert.equal(controls.page.defaultWhen, "any-control");
+  assert.equal(controls.limit.defaultWhen, "any-control");
+  assert.equal(controls.page.type, "integer");
+  assert.equal(controls.limit.type, "integer");
+  assert.equal(controls.page.cardinality, "single");
+  assert.equal(controls.limit.cardinality, "single");
+  assert.equal(defaults.body.pagination.page, controls.page.default);
+  assert.equal(defaults.body.pagination.limit, controls.limit.default);
+  assert.equal(minimumPage.status, 200);
+  assert.equal(maximumPage.status, 200);
+  assert.equal(maximumLimit.status, 200);
+  assert.equal(maximumLimit.body.pagination.limit, controls.limit.maximum);
+  assert.equal(belowMinimumPage.status, 400);
+  assert.equal(aboveMaximumPage.status, 400);
+  assert.equal(fractionalPage.status, 400);
+  assert.equal(belowMinimumLimit.status, 400);
+  assert.equal(aboveMaximumLimit.status, 400);
+  assert.equal(fractionalLimit.status, 400);
+});
+
+test("advertised filters enforce single nonblank string inputs", async () => {
+  for (const capability of capabilityManifest.capabilities.filter(
+    ({ controls }) => controls?.status,
+  )) {
+    for (const filter of ["status", "category", "label", "q"]) {
+      const descriptor = capability.controls[filter];
+      const repeated = await get(
+        `${capability.path}?${filter}=value&${filter}=other`,
+      );
+      const blank = await get(`${capability.path}?${filter}=%20%20`);
+
+      assert.equal(descriptor.type, "string", `${capability.id}:${filter}`);
+      assert.equal(
+        descriptor.cardinality,
+        "single",
+        `${capability.id}:${filter}`,
+      );
+      assert.equal(descriptor.nonBlank, true, `${capability.id}:${filter}`);
+      assert.equal(repeated.status, 400, `${capability.id}:${filter}:repeated`);
+      assert.equal(blank.status, 400, `${capability.id}:${filter}:blank`);
+    }
+  }
+});
+
+test("capability responses resist consumer mutation", async () => {
+  const firstResult = await get("/api/capabilities");
+
+  firstResult.body.capabilities[0].id = "changed";
+  firstResult.body.capabilities[1].controls.sort.values.reverse();
+  firstResult.body.capabilities.reverse();
+
+  const secondResult = await get("/api/capabilities");
+
+  assert.deepEqual(secondResult.body, expectedCapabilityManifest);
+  assert.equal(secondResult.text, JSON.stringify(expectedCapabilityManifest));
+});
+
+test("capability discovery rejects unadvertised query controls", async () => {
+  const result = await get("/api/capabilities?runtime=true");
+
+  assert.equal(result.status, 400);
+  assert.deepEqual(result.body, {
+    error: {
+      code: "invalid_query",
+      message: "Invalid query parameters",
+    },
+  });
+  assert.equal(result.headers.get("etag"), null);
+});
 
 test("GET /health returns deterministic operational diagnostics", async () => {
   const firstResult = await get("/health");
@@ -1085,6 +1488,7 @@ test("GET /api/items/:id returns an exact fixture match", async () => {
 test("successful baseline GET representations have stable validators", async () => {
   for (const path of [
     "/health",
+    "/api/capabilities",
     "/api/items",
     "/api/items?q=item",
     "/api/items?label=read-only",
@@ -1386,6 +1790,7 @@ test("unknown routes return the generic JSON 404 contract", async () => {
 });
 
 for (const path of [
+  "/api/capabilities",
   "/api/items",
   "/api/items/summary",
   "/api/items/facets",
