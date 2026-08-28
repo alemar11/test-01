@@ -43,12 +43,43 @@ test("reporting is read-only for the fixture array and its records", () => {
 });
 
 test("all duplicate IDs and malformed scalar fields are reported in stable order", () => {
+  const validLabels = ["valid-label"];
   const invalidFixtures = [
-    { id: "item-b", name: "", status: "Active", category: "core_service" },
-    { id: "item-a", name: " Valid", status: "", category: "valid-category" },
-    { id: "item-b", name: "Valid", status: "active", category: "" },
-    { id: "item-a", name: 42, status: null, category: "UPPER" },
-    { id: "item-b", name: "Valid", status: "active", category: "valid" },
+    {
+      id: "item-b",
+      name: "",
+      status: "Active",
+      category: "core_service",
+      labels: validLabels,
+    },
+    {
+      id: "item-a",
+      name: " Valid",
+      status: "",
+      category: "valid-category",
+      labels: validLabels,
+    },
+    {
+      id: "item-b",
+      name: "Valid",
+      status: "active",
+      category: "",
+      labels: validLabels,
+    },
+    {
+      id: "item-a",
+      name: 42,
+      status: null,
+      category: "UPPER",
+      labels: validLabels,
+    },
+    {
+      id: "item-b",
+      name: "Valid",
+      status: "active",
+      category: "valid",
+      labels: validLabels,
+    },
     null,
   ];
 
@@ -80,6 +111,7 @@ test("all duplicate IDs and malformed scalar fields are reported in stable order
       { code: "invalid_name", field: "name", index: 5 },
       { code: "invalid_status", field: "status", index: 5 },
       { code: "invalid_category", field: "category", index: 5 },
+      { code: "invalid_labels", field: "labels", index: 5 },
     ],
   };
 
@@ -95,6 +127,7 @@ test("sparse fixture slots produce deterministic required-field violations", () 
       { code: "invalid_name", field: "name", index: 0 },
       { code: "invalid_status", field: "status", index: 0 },
       { code: "invalid_category", field: "category", index: 0 },
+      { code: "invalid_labels", field: "labels", index: 0 },
     ],
   });
 });
@@ -104,6 +137,7 @@ test("missing, null, numeric, and empty IDs are invalid in stable order", () => 
     name: "Valid",
     status: "active",
     category: "valid-category",
+    labels: ["valid-label"],
   };
   const fixtures = [
     { ...validScalars },
@@ -123,21 +157,194 @@ test("missing, null, numeric, and empty IDs are invalid in stable order", () => 
   });
 });
 
-test("CLI behavior prints JSON and returns success for valid fixtures", () => {
-  const result = spawnSync(process.execPath, ["scripts/fixture-quality-report.js"], {
-    cwd: require("node:path").resolve(__dirname, ".."),
-    encoding: "utf8",
-  });
+test("all label-list contract violations are reported in stable order", () => {
+  const validScalars = {
+    id: "item",
+    name: "Valid",
+    status: "active",
+    category: "valid-category",
+  };
+  const invalidFixtures = [
+    { ...validScalars },
+    { ...validScalars, labels: null },
+    { ...validScalars, labels: "valid-label" },
+    { ...validScalars, labels: [] },
+    { ...validScalars, labels: ["z", "UPPER", 42, 42, "a"] },
+    { ...validScalars, labels: ["beta", "alpha", "beta", "alpha"] },
+  ].map((fixture, index) => ({ ...fixture, id: `item-${index}` }));
+  const labelsBefore = invalidFixtures.map((fixture) =>
+    Array.isArray(fixture.labels) ? [...fixture.labels] : fixture.labels,
+  );
+  const expected = {
+    inspected: 6,
+    violations: [
+      { code: "invalid_labels", field: "labels", index: 0 },
+      { code: "invalid_labels", field: "labels", index: 1 },
+      { code: "invalid_labels", field: "labels", index: 2 },
+      { code: "empty_labels", field: "labels", index: 3 },
+      {
+        code: "invalid_label",
+        field: "labels",
+        index: 4,
+        labelIndex: 1,
+      },
+      {
+        code: "invalid_label",
+        field: "labels",
+        index: 4,
+        labelIndex: 2,
+      },
+      {
+        code: "duplicate_label",
+        field: "labels",
+        index: 4,
+        label: 42,
+        labelIndexes: [2, 3],
+      },
+      {
+        code: "invalid_label",
+        field: "labels",
+        index: 4,
+        labelIndex: 3,
+      },
+      {
+        code: "unsorted_label",
+        field: "labels",
+        index: 4,
+        labelIndex: 4,
+      },
+      {
+        code: "duplicate_label",
+        field: "labels",
+        index: 5,
+        label: "beta",
+        labelIndexes: [0, 2],
+      },
+      {
+        code: "duplicate_label",
+        field: "labels",
+        index: 5,
+        label: "alpha",
+        labelIndexes: [1, 3],
+      },
+      {
+        code: "unsorted_label",
+        field: "labels",
+        index: 5,
+        labelIndex: 1,
+      },
+      {
+        code: "unsorted_label",
+        field: "labels",
+        index: 5,
+        labelIndex: 3,
+      },
+    ],
+  };
 
-  assert.equal(result.status, 0);
-  assert.equal(result.stderr, "");
-  assert.equal(result.stdout, '{"inspected":2,"violations":[]}\n');
+  assert.deepEqual(createFixtureQualityReport(invalidFixtures), expected);
+  assert.deepEqual(createFixtureQualityReport(invalidFixtures), expected);
+  assert.deepEqual(
+    invalidFixtures.map((fixture) =>
+      Array.isArray(fixture.labels) ? [...fixture.labels] : fixture.labels,
+    ),
+    labelsBefore,
+  );
+});
+
+test("duplicate malformed labels keep CLI output JSON-safe", () => {
+  const circularLabel = {};
+  circularLabel.self = circularLabel;
+  const invalidFixtures = [
+    {
+      id: "item-1",
+      name: "Valid",
+      status: "active",
+      category: "valid-category",
+      labels: [1n, 1n, circularLabel, circularLabel],
+    },
+  ];
+
+  const result = captureReport(invalidFixtures);
+
+  assert.equal(result.exitCode, 1);
+  assert.deepEqual(JSON.parse(result.output), {
+    inspected: 1,
+    violations: [
+      { code: "invalid_label", field: "labels", index: 0, labelIndex: 0 },
+      {
+        code: "duplicate_label",
+        field: "labels",
+        index: 0,
+        labelIndexes: [0, 1],
+      },
+      { code: "invalid_label", field: "labels", index: 0, labelIndex: 1 },
+      { code: "invalid_label", field: "labels", index: 0, labelIndex: 2 },
+      {
+        code: "duplicate_label",
+        field: "labels",
+        index: 0,
+        labelIndexes: [2, 3],
+      },
+      { code: "invalid_label", field: "labels", index: 0, labelIndex: 3 },
+    ],
+  });
+});
+
+test("labels reject digit-bearing lower-kebab values", () => {
+  assert.deepEqual(
+    createFixtureQualityReport([
+      {
+        id: "item-1",
+        name: "Valid",
+        status: "active2",
+        category: "category-2",
+        labels: ["123", "service-2"],
+      },
+    ]),
+    {
+      inspected: 1,
+      violations: [
+        { code: "invalid_label", field: "labels", index: 0, labelIndex: 0 },
+        { code: "invalid_label", field: "labels", index: 0, labelIndex: 1 },
+      ],
+    },
+  );
+});
+
+test("CLI behavior prints JSON and returns success for valid fixtures", () => {
+  const run = () =>
+    spawnSync(process.execPath, ["scripts/fixture-quality-report.js"], {
+      cwd: require("node:path").resolve(__dirname, ".."),
+      encoding: "utf8",
+    });
+  const firstResult = run();
+  const secondResult = run();
+
+  assert.equal(firstResult.status, 0);
+  assert.equal(firstResult.stderr, "");
+  assert.equal(firstResult.stdout, '{"inspected":2,"violations":[]}\n');
+  assert.equal(secondResult.status, firstResult.status);
+  assert.equal(secondResult.stderr, firstResult.stderr);
+  assert.equal(secondResult.stdout, firstResult.stdout);
 });
 
 test("CLI behavior prints every violation and returns failure for invalid fixtures", () => {
   const invalidFixtures = [
-    { id: "item-1", name: "", status: "Active", category: "invalid_category" },
-    { id: "item-1", name: "Valid", status: "active", category: "valid" },
+    {
+      id: "item-1",
+      name: "",
+      status: "Active",
+      category: "invalid_category",
+      labels: ["valid-label", "valid-label", "UPPER"],
+    },
+    {
+      id: "item-1",
+      name: "Valid",
+      status: "active",
+      category: "valid",
+      labels: ["valid-label"],
+    },
   ];
 
   const result = captureReport(invalidFixtures);
@@ -155,6 +362,19 @@ test("CLI behavior prints every violation and returns failure for invalid fixtur
       { code: "invalid_name", field: "name", index: 0 },
       { code: "invalid_status", field: "status", index: 0 },
       { code: "invalid_category", field: "category", index: 0 },
+      {
+        code: "duplicate_label",
+        field: "labels",
+        index: 0,
+        label: "valid-label",
+        labelIndexes: [0, 1],
+      },
+      {
+        code: "invalid_label",
+        field: "labels",
+        index: 0,
+        labelIndex: 2,
+      },
     ],
   });
 });
