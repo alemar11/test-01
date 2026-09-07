@@ -158,7 +158,7 @@ surfaces without inspecting runtime state or fixture data:
         "sort": {
           "type": "string",
           "cardinality": "single",
-          "values": ["id", "name", "status"]
+          "values": ["id", "name", "status", "category"]
         },
         "order": {
           "type": "string",
@@ -317,16 +317,17 @@ Queried reads support only these scalar parameters:
 | `category` | Exact category match; blank values are invalid. |
 | `label` | Exact membership match against item labels; blank values are invalid. |
 | `q` | Case-insensitive name substring match after trimming; blank values are invalid. |
-| `sort` | Explicit sort field: `id`, `name`, or `status`. Omission preserves fixture order. |
+| `sort` | Explicit sort field: `id`, `name`, `status`, or `category`. Omission preserves fixture order. |
 | `order` | `asc` or `desc`; defaults to `asc` when `sort` is present and is invalid without `sort`. |
 | `page` | 1-based page number. Defaults to `1`. |
 | `limit` | Page size. Defaults to `20` and cannot exceed `100`. |
 
 All supplied filters compose before explicit sorting, and pagination happens
 last. Omission of `sort` preserves fixture order. Name sorting is
-case-insensitive; ID and status use their scalar values. Item ID is the
-ascending tie-breaker for equal sort values in both sort directions. For
-example, `GET /api/items?label=featured&category=core-service&status=active&q=first&sort=name&order=desc&page=1&limit=1`
+case-insensitive; ID, status, and category use their ordinal scalar values.
+Item ID is the ascending tie-breaker for equal sort values in both sort
+directions. For example,
+`GET /api/items?label=featured&category=core-service&status=active&q=first&sort=name&order=desc&page=1&limit=1`
 returns:
 
 ```json

@@ -6,6 +6,7 @@ const packageMetadata = require("../package.json");
 const app = require("../src/app");
 const capabilityManifest = require("../src/capabilities");
 const { facetItems } = require("../src/item-facets");
+const { sortItems } = require("../src/item-sort");
 const { summarizeItems } = require("../src/item-summary");
 const itemsRepository = require("../src/items-repository");
 
@@ -75,7 +76,7 @@ const expectedCapabilityManifest = {
         sort: {
           type: "string",
           cardinality: "single",
-          values: ["id", "name", "status"],
+          values: ["id", "name", "status", "category"],
         },
         order: {
           type: "string",
@@ -193,6 +194,23 @@ test("item repository exposes the exact read API", () => {
   ]);
 });
 
+test("category sorting keeps ascending ID ties in either direction", () => {
+  const syntheticItems = [
+    { id: "item-2", category: "same-category" },
+    { id: "item-3", category: "other-category" },
+    { id: "item-1", category: "same-category" },
+  ];
+
+  assert.deepEqual(
+    sortItems([...syntheticItems], "category", "asc").map(({ id }) => id),
+    ["item-3", "item-1", "item-2"],
+  );
+  assert.deepEqual(
+    sortItems([...syntheticItems], "category", "desc").map(({ id }) => id),
+    ["item-1", "item-2", "item-3"],
+  );
+});
+
 test("item summaries safely count keys inherited by ordinary objects", () => {
   const summary = summarizeItems([
     { status: "constructor", category: "constructor" },
@@ -271,6 +289,14 @@ test("repository-backed items expose stable immutable categories and labels", ()
   assert.deepEqual(
     itemsRepository.listItems({ label: "read-only" }),
     expectedItems,
+  );
+  assert.deepEqual(
+    itemsRepository.listItems({ sort: "category", order: "asc" }),
+    expectedItems,
+  );
+  assert.deepEqual(
+    itemsRepository.listItems({ sort: "category", order: "desc" }),
+    [expectedItems[1], expectedItems[0]],
   );
   assert.ok(firstRead.every((item) => Object.isFrozen(item)));
   assert.ok(firstRead.every((item) => Object.isFrozen(item.labels)));
@@ -524,6 +550,7 @@ test("advertised collection values, requirements, defaults, and limits are exact
     id: ["item-2", "item-1"],
     name: ["item-2", "item-1"],
     status: ["item-1", "item-2"],
+    category: ["item-2", "item-1"],
   };
 
   for (const sort of controls.sort.values) {

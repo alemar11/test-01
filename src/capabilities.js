@@ -53,7 +53,7 @@ const manifest = deepFreeze({
         sort: {
           type: "string",
           cardinality: "single",
-          values: ["id", "name", "status"],
+          values: ["id", "name", "status", "category"],
         },
         order: {
           type: "string",

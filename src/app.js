@@ -23,7 +23,12 @@ const supportedItemQueryParameters = new Set([
   "page",
   "limit",
 ]);
-const supportedItemSortFields = new Set(["id", "name", "status"]);
+const supportedItemSortFields = new Set([
+  "id",
+  "name",
+  "status",
+  "category",
+]);
 const supportedItemSortOrders = new Set(["asc", "desc"]);
 const supportedSummaryQueryParameters = new Set([
   "status",

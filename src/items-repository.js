@@ -1,4 +1,5 @@
 const { items } = require("./data");
+const { sortItems } = require("./item-sort");
 
 function listItems(filters = {}) {
   const normalizedQuery = filters.q?.trim().toLowerCase();
@@ -22,22 +23,7 @@ function listItems(filters = {}) {
     return filteredItems;
   }
 
-  const direction = filters.order === "desc" ? -1 : 1;
-  return filteredItems.sort((left, right) => {
-    const leftValue =
-      filters.sort === "name" ? left.name.toLowerCase() : left[filters.sort];
-    const rightValue =
-      filters.sort === "name" ? right.name.toLowerCase() : right[filters.sort];
-
-    if (leftValue < rightValue) {
-      return -direction;
-    }
-    if (leftValue > rightValue) {
-      return direction;
-    }
-
-    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
-  });
+  return sortItems(filteredItems, filters.sort, filters.order);
 }
 
 function findItemById(id) {
