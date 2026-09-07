@@ -5,6 +5,7 @@ const capabilityManifest = require("./capabilities");
 const { sendValidatedJson } = require("./http-cache");
 const { facetItems } = require("./item-facets");
 const { summarizeItems } = require("./item-summary");
+const { vocabularyItems } = require("./item-vocabulary");
 const { findItemById, listItems } = require("./items-repository");
 
 const app = express();
@@ -202,6 +203,17 @@ app.get("/api/items/facets", (request, response) => {
   sendValidatedJson(request, response, {
     data: facetItems(matchingItems),
     filters: normalizedFilters,
+  });
+});
+
+app.get("/api/items/vocabulary", (request, response) => {
+  if (Object.keys(request.query).length > 0) {
+    invalidQuery(response);
+    return;
+  }
+
+  sendValidatedJson(request, response, {
+    data: vocabularyItems(listItems()),
   });
 });
 

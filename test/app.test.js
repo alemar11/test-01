@@ -7,6 +7,7 @@ const app = require("../src/app");
 const capabilityManifest = require("../src/capabilities");
 const { facetItems } = require("../src/item-facets");
 const { summarizeItems } = require("../src/item-summary");
+const { vocabularyItems } = require("../src/item-vocabulary");
 const itemsRepository = require("../src/items-repository");
 
 const expectedItems = [
@@ -34,6 +35,11 @@ const expectedFacets = {
   total: 2,
   byLabel: { featured: 1, "read-only": 2, support: 1 },
   byCategory: { "core-service": 1, "support-service": 1 },
+};
+const expectedVocabulary = {
+  statuses: ["active"],
+  categories: ["core-service", "support-service"],
+  labels: ["featured", "read-only", "support"],
 };
 const expectedItemFilterControls = {
   status: {
@@ -103,6 +109,11 @@ const expectedCapabilityManifest = {
       },
     },
     {
+      id: "item-vocabulary",
+      method: "GET",
+      path: "/api/items/vocabulary",
+    },
+    {
       id: "item-summary",
       method: "GET",
       path: "/api/items/summary",
@@ -149,6 +160,7 @@ test("capability manifest exposes an exact immutable schema version 1 contract",
   assert.deepEqual(capabilityIds, [
     "health",
     "item-collection",
+    "item-vocabulary",
     "item-summary",
     "item-facets",
     "item-detail",
@@ -300,6 +312,38 @@ test("repository-backed items expose stable immutable categories and labels", ()
   assert.deepEqual(itemsRepository.listItems(), expectedItems);
 });
 
+test("item vocabularies deduplicate and sort repository fields", () => {
+  assert.deepEqual(
+    vocabularyItems([
+      {
+        status: "beta",
+        category: "z-category",
+        labels: ["z-label", "shared-label"],
+      },
+      {
+        status: "alpha",
+        category: "a-category",
+        labels: ["shared-label", "a-label"],
+      },
+      {
+        status: "beta",
+        category: "z-category",
+        labels: ["z-label"],
+      },
+    ]),
+    {
+      statuses: ["alpha", "beta"],
+      categories: ["a-category", "z-category"],
+      labels: ["a-label", "shared-label", "z-label"],
+    },
+  );
+  assert.deepEqual(vocabularyItems([]), {
+    statuses: [],
+    categories: [],
+    labels: [],
+  });
+});
+
 function startServer() {
   return new Promise((resolve, reject) => {
     const instance = app.listen(0, "127.0.0.1");
@@ -439,6 +483,7 @@ test("advertised paths and filter semantics match provider behavior", async () =
 
   const health = resultsByCapabilityId.health;
   const collection = resultsByCapabilityId["item-collection"];
+  const vocabulary = resultsByCapabilityId["item-vocabulary"];
   const summary = resultsByCapabilityId["item-summary"];
   const facets = resultsByCapabilityId["item-facets"];
   const detail = resultsByCapabilityId["item-detail"];
@@ -459,6 +504,8 @@ test("advertised paths and filter semantics match provider behavior", async () =
       limit: 100,
     }),
   });
+  assert.equal(vocabulary.status, 200);
+  assert.deepEqual(vocabulary.body, { data: expectedVocabulary });
   assert.deepEqual(
     summary.body,
     expectedSummaryResponse({
@@ -682,6 +729,49 @@ test("GET /api/items preserves the exact no-query response", async () => {
   assert.equal(result.status, 200);
   assert.deepEqual(result.body, { data: expectedItems });
   assert.deepEqual(Object.keys(result.body), ["data"]);
+});
+
+test("GET /api/items/vocabulary returns deterministic full-set values", async () => {
+  const firstResult = await get("/api/items/vocabulary");
+  const secondResult = await get("/api/items/vocabulary");
+
+  assert.equal(firstResult.status, 200);
+  assert.equal(secondResult.status, 200);
+  assert.deepEqual(firstResult.body, { data: expectedVocabulary });
+  assert.deepEqual(secondResult.body, firstResult.body);
+  assert.equal(firstResult.text, JSON.stringify({ data: expectedVocabulary }));
+  assert.equal(secondResult.text, firstResult.text);
+  assert.deepEqual(Object.keys(firstResult.body), ["data"]);
+  assert.deepEqual(Object.keys(firstResult.body.data), [
+    "statuses",
+    "categories",
+    "labels",
+  ]);
+  for (const values of Object.values(firstResult.body.data)) {
+    assert.ok(values.every((value) => typeof value === "string"));
+    assert.equal(new Set(values).size, values.length);
+    assert.ok(
+      values.every(
+        (value, index) => index === 0 || values[index - 1] < value,
+      ),
+    );
+  }
+  assert.equal(
+    assertValidEtag(firstResult),
+    assertValidEtag(secondResult),
+  );
+
+  const conditionalResult = await request("/api/items/vocabulary", {
+    headers: { "If-None-Match": firstResult.headers.get("etag") },
+  });
+
+  assert.equal(conditionalResult.status, 304);
+  assert.equal(conditionalResult.body, null);
+  assert.equal(conditionalResult.text, "");
+  assert.equal(
+    conditionalResult.headers.get("etag"),
+    firstResult.headers.get("etag"),
+  );
 });
 
 test("GET /api/items/summary returns deterministic full-set counts", async () => {
@@ -1153,6 +1243,26 @@ test("GET /api/items accepts the maximum limit", async () => {
 
 for (const query of [
   "unknown=value",
+  "status=active",
+  "status=active&status=inactive",
+  "status[mode]=active",
+]) {
+  test(`GET /api/items/vocabulary rejects query: ${query}`, async () => {
+    const result = await get(`/api/items/vocabulary?${query}`);
+
+    assert.equal(result.status, 400);
+    assert.deepEqual(result.body, {
+      error: {
+        code: "invalid_query",
+        message: "Invalid query parameters",
+      },
+    });
+    assert.equal(result.headers.get("etag"), null);
+  });
+}
+
+for (const query of [
+  "unknown=value",
   "status=active&status=inactive",
   "category=core-service&category=support-service",
   "label=featured&label=read-only",
@@ -1527,6 +1637,7 @@ test("successful baseline GET representations have stable validators", async () 
     "/api/items",
     "/api/items?q=item",
     "/api/items?label=read-only",
+    "/api/items/vocabulary",
     "/api/items/summary?label=read-only",
     "/api/items/facets?label=read-only",
     "/api/items/item-1",
@@ -1827,6 +1938,7 @@ test("unknown routes return the generic JSON 404 contract", async () => {
 for (const path of [
   "/api/capabilities",
   "/api/items",
+  "/api/items/vocabulary",
   "/api/items/summary",
   "/api/items/facets",
   "/api/items/item-1",
