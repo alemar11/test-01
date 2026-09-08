@@ -19,6 +19,9 @@ small, deterministic, and read-only.
   violations exist.
 - `src/items-repository.js` is the only read boundary over those fixtures and
   exposes category- and label-aware `listItems()` and `findItemById(id)`.
+- `src/item-sort.js` owns deterministic scalar sorting, including
+  case-insensitive names, ordinal category values, and ascending ID tie-breaks
+  for either direction.
 - `src/item-facets.js` derives a matching total and prototype-free category and
   label counts from a repository result without introducing another
   fixture-read boundary.
