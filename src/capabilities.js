@@ -81,6 +81,20 @@ const manifest = deepFreeze({
       },
     },
     {
+      id: "item-batch",
+      method: "GET",
+      path: "/api/items/batch",
+      controls: {
+        ids: {
+          type: "string",
+          cardinality: "single",
+          nonBlank: true,
+          minimum: 1,
+          maximum: 50,
+        },
+      },
+    },
+    {
       id: "item-vocabulary",
       method: "GET",
       path: "/api/items/vocabulary",
