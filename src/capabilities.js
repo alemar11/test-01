@@ -95,6 +95,11 @@ const manifest = deepFreeze({
       },
     },
     {
+      id: "item-vocabulary",
+      method: "GET",
+      path: "/api/items/vocabulary",
+    },
+    {
       id: "item-summary",
       method: "GET",
       path: "/api/items/summary",

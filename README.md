@@ -54,6 +54,7 @@ Available endpoints:
 - `GET /api/capabilities`
 - `GET /api/items`
 - `GET /api/items/batch`
+- `GET /api/items/vocabulary`
 - `GET /api/items/summary`
 - `GET /api/items/facets`
 - `GET /api/items/:id`
@@ -201,6 +202,11 @@ surfaces without inspecting runtime state or fixture data:
       }
     },
     {
+      "id": "item-vocabulary",
+      "method": "GET",
+      "path": "/api/items/vocabulary"
+    },
+    {
       "id": "item-summary",
       "method": "GET",
       "path": "/api/items/summary",
@@ -298,6 +304,30 @@ default to `1` and `20` respectively; this condition is represented by
 The response is immutable in-process and byte-stable across unchanged reads.
 It uses the same strong representation-derived `ETag` and conditional-read
 behavior as the other successful GET resources.
+
+## Read item vocabulary
+
+`GET /api/items/vocabulary` returns the complete set of values available for
+item status, category, and label filters. It reads through the item repository,
+flattens labels, removes duplicates, and sorts each array using JavaScript's
+ordinal comparison. It accepts no query parameters and returns exactly one
+`data` envelope; it does not include counts or apply filtering:
+
+```json
+{
+  "data": {
+    "statuses": ["active"],
+    "categories": ["core-service", "support-service"],
+    "labels": ["featured", "read-only", "support"]
+  }
+}
+```
+
+Empty inventories are represented by empty arrays. Unknown, repeated,
+structured, or otherwise supplied query parameters return the shared HTTP 400
+`invalid_query` response. Vocabulary reads are deterministic and use the same
+strong representation-derived `ETag` and conditional-read behavior as the
+other successful GET resources.
 
 ## Read items
 
@@ -542,12 +572,12 @@ their own deterministic validators.
 
 Every successful HTTP 200 representation from `GET /health`,
 `GET /api/capabilities`, `GET /api/items`, `GET /api/items/batch`,
-`GET /api/items/summary`, `GET /api/items/facets`, and `GET /api/items/:id` includes
-a strong `ETag`
+`GET /api/items/vocabulary`, `GET /api/items/summary`, `GET /api/items/facets`,
+and `GET /api/items/:id` includes a strong `ETag`
 derived from the exact JSON representation. This includes capability,
-label-aware collection, summary, and facet results: unchanged representations
-keep the same validator, while different result bodies or normalized metadata
-use different validators.
+label-aware collection, vocabulary, summary, and facet results: unchanged
+representations keep the same validator, while different result bodies or
+normalized metadata use different validators.
 
 Clients can send that validator in `If-None-Match`. Exact matches, weak
 validators, validator lists containing a match, and `*` return HTTP 304 with an
@@ -557,6 +587,6 @@ contracts and are not assigned validators.
 
 The validators are deterministic over immutable representations. They add no
 database, persistence, write path, expiration policy, or external cache, and
-do not cover endpoints beyond the seven GET surfaces listed above.
+do not cover endpoints beyond the eight GET surfaces listed above.
 
 Run the backend tests with `npm test`.

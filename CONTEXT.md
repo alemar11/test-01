@@ -22,6 +22,11 @@ small, deterministic, and read-only.
 - `src/item-facets.js` derives a matching total and prototype-free category and
   label counts from a repository result without introducing another
   fixture-read boundary.
+- `src/item-vocabulary.js` derives unique, ordinal-sorted status, category, and
+  flattened label values from a repository result without introducing another
+  fixture-read boundary.
+- `GET /api/items/batch` provides a bounded, ordered repository read with
+  separate found and missing ID partitions and no mutation or persistence.
 - `src/item-summary.js` derives totals and prototype-free grouping maps from a
   repository result without introducing another fixture-read boundary.
 - `GET /api/items/summary` aggregates the complete `listItems()` result after
@@ -36,8 +41,9 @@ small, deterministic, and read-only.
 - `GET /api/capabilities` exposes the schema version 1 capability manifest in
   stable order with deterministic cache validators. It omits fixture-instance
   inventory, volatile metadata, writes, persistence, and runtime introspection.
-- The API exposes GET-only health, capability-discovery, item, item-summary,
-  and item-facet reads. It has no database, persistence, or write operation.
+- The API exposes GET-only health, capability-discovery, item, item-batch,
+  item-vocabulary, item-summary, and item-facet reads. It has no database,
+  persistence, or write operation.
 - `npm run build` checks source syntax; `npm test` verifies the HTTP contract.
 - Release automation is confined to
   `.github/workflows/release-version-dry-run.yml` and
