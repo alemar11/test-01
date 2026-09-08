@@ -5,6 +5,7 @@ const capabilityManifest = require("./capabilities");
 const { sendValidatedJson } = require("./http-cache");
 const { facetItems } = require("./item-facets");
 const { summarizeItems } = require("./item-summary");
+const { vocabularyItems } = require("./item-vocabulary");
 const { findItemById, listItems } = require("./items-repository");
 
 const app = express();
@@ -30,6 +31,7 @@ const supportedItemSortFields = new Set([
   "category",
 ]);
 const supportedItemSortOrders = new Set(["asc", "desc"]);
+const itemIdPattern = /^[A-Za-z0-9_-]+$/;
 const supportedSummaryQueryParameters = new Set([
   "status",
   "category",
@@ -92,6 +94,28 @@ function normalizeItemFilters(filters) {
     label: filters.label ?? null,
     q: filters.q?.trim().toLowerCase() ?? null,
   };
+}
+
+function parseBatchIds(query) {
+  if (
+    Object.keys(query).length !== 1 ||
+    !Object.prototype.hasOwnProperty.call(query, "ids") ||
+    typeof query.ids !== "string"
+  ) {
+    return null;
+  }
+
+  const ids = query.ids.split(",");
+  if (
+    ids.length < 1 ||
+    ids.length > 50 ||
+    ids.some((id) => !itemIdPattern.test(id)) ||
+    new Set(ids).size !== ids.length
+  ) {
+    return null;
+  }
+
+  return ids;
 }
 
 app.get("/health", (request, response) => {
@@ -207,6 +231,38 @@ app.get("/api/items/facets", (request, response) => {
   sendValidatedJson(request, response, {
     data: facetItems(matchingItems),
     filters: normalizedFilters,
+  });
+});
+
+app.get("/api/items/batch", (request, response) => {
+  const ids = parseBatchIds(request.query);
+  if (ids === null) {
+    invalidQuery(response);
+    return;
+  }
+
+  const data = [];
+  const missing = [];
+  for (const id of ids) {
+    const item = findItemById(id);
+    if (item) {
+      data.push(item);
+    } else {
+      missing.push(id);
+    }
+  }
+
+  sendValidatedJson(request, response, { data, missing });
+});
+
+app.get("/api/items/vocabulary", (request, response) => {
+  if (Object.keys(request.query).length > 0) {
+    invalidQuery(response);
+    return;
+  }
+
+  sendValidatedJson(request, response, {
+    data: vocabularyItems(listItems()),
   });
 });
 

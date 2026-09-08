@@ -53,6 +53,8 @@ Available endpoints:
 - `GET /health`
 - `GET /api/capabilities`
 - `GET /api/items`
+- `GET /api/items/batch`
+- `GET /api/items/vocabulary`
 - `GET /api/items/summary`
 - `GET /api/items/facets`
 - `GET /api/items/:id`
@@ -186,6 +188,25 @@ surfaces without inspecting runtime state or fixture data:
       }
     },
     {
+      "id": "item-batch",
+      "method": "GET",
+      "path": "/api/items/batch",
+      "controls": {
+        "ids": {
+          "type": "string",
+          "cardinality": "single",
+          "nonBlank": true,
+          "minimum": 1,
+          "maximum": 50
+        }
+      }
+    },
+    {
+      "id": "item-vocabulary",
+      "method": "GET",
+      "path": "/api/items/vocabulary"
+    },
+    {
       "id": "item-summary",
       "method": "GET",
       "path": "/api/items/summary",
@@ -268,10 +289,11 @@ manifest includes only GET methods, route paths, supported controls,
 scalar types and cardinality, nonblank requirements, constrained values,
 defaults, and limits. Pagination accepts only single integer values: `page`
 runs from `1` through JavaScript's maximum safe integer, while `limit` runs
-from `1` through `100`. It deliberately excludes current item identities and
-counts, write or persistence claims, timestamps, host and process data,
-environment values, and other runtime introspection. Query parameters are not
-supported on the discovery endpoint.
+from `1` through `100`. Batch reads accept one scalar `ids` value containing
+between `1` and `50` comma-separated IDs. It deliberately excludes current
+item identities and counts, write or persistence claims, timestamps, host and
+process data, environment values, and other runtime introspection. Query
+parameters are not supported on the discovery endpoint.
 
 The item collection preserves its legacy `{ "data": [...] }` response when
 no controls are supplied. Supplying any advertised collection control
@@ -282,6 +304,30 @@ default to `1` and `20` respectively; this condition is represented by
 The response is immutable in-process and byte-stable across unchanged reads.
 It uses the same strong representation-derived `ETag` and conditional-read
 behavior as the other successful GET resources.
+
+## Read item vocabulary
+
+`GET /api/items/vocabulary` returns the complete set of values available for
+item status, category, and label filters. It reads through the item repository,
+flattens labels, removes duplicates, and sorts each array using JavaScript's
+ordinal comparison. It accepts no query parameters and returns exactly one
+`data` envelope; it does not include counts or apply filtering:
+
+```json
+{
+  "data": {
+    "statuses": ["active"],
+    "categories": ["core-service", "support-service"],
+    "labels": ["featured", "read-only", "support"]
+  }
+}
+```
+
+Empty inventories are represented by empty arrays. Unknown, repeated,
+structured, or otherwise supplied query parameters return the shared HTTP 400
+`invalid_query` response. Vocabulary reads are deterministic and use the same
+strong representation-derived `ETag` and conditional-read behavior as the
+other successful GET resources.
 
 ## Read items
 
@@ -381,10 +427,51 @@ blank values, invalid sort/order combinations, non-decimal or non-positive
 Query values must be scalar. Structured values are rejected along with
 unsupported, repeated, or blank parameters. Category and label matching are
 exact and case-sensitive; an unknown non-blank value produces an empty matching
-set. `q` alone is trimmed and case-insensitive. Item detail, health, and
-collection reads remain GET-only; other methods and unknown routes use the
+set. `q` alone is trimmed and case-insensitive. Item detail, health, collection,
+and batch reads remain GET-only; other methods and unknown routes use the
 generic `not_found` response. Repeated reads are deterministic, and changing a
 decoded response cannot mutate later repository-backed reads.
+
+## Read a batch of items
+
+`GET /api/items/batch` accepts exactly one scalar `ids` query parameter. Its
+value must contain `1` through `50` unique, comma-separated IDs, with each ID
+matching `[A-Za-z0-9_-]+`. IDs are not trimmed, so whitespace, empty components,
+repeated IDs, repeated query keys, structured values, unsupported keys, and
+values outside the bound return the shared HTTP 400 `invalid_query` response.
+
+Known items are returned in the requested order under `data`. Unknown IDs are
+not errors and are returned in requested order under `missing`:
+
+```text
+GET /api/items/batch?ids=item-2,missing-item,item-1
+```
+
+```json
+{
+  "data": [
+    {
+      "id": "item-2",
+      "name": "Second item",
+      "status": "active",
+      "category": "support-service",
+      "labels": ["read-only", "support"]
+    },
+    {
+      "id": "item-1",
+      "name": "First item",
+      "status": "active",
+      "category": "core-service",
+      "labels": ["featured", "read-only"]
+    }
+  ],
+  "missing": ["missing-item"]
+}
+```
+
+The route reads through the same immutable item repository as collection and
+detail reads. Successful batch representations use the same strong,
+representation-derived `ETag` and conditional-read behavior.
 
 ## Summarize items
 
@@ -485,12 +572,13 @@ their own deterministic validators.
 ## HTTP cache validators
 
 Every successful HTTP 200 representation from `GET /health`,
-`GET /api/capabilities`, `GET /api/items`, `GET /api/items/summary`,
-`GET /api/items/facets`, and `GET /api/items/:id` includes a strong `ETag`
+`GET /api/capabilities`, `GET /api/items`, `GET /api/items/batch`,
+`GET /api/items/vocabulary`, `GET /api/items/summary`, `GET /api/items/facets`,
+and `GET /api/items/:id` includes a strong `ETag`
 derived from the exact JSON representation. This includes capability,
-label-aware collection, summary, and facet results: unchanged representations
-keep the same validator, while different result bodies or normalized metadata
-use different validators.
+label-aware collection, vocabulary, summary, and facet results: unchanged
+representations keep the same validator, while different result bodies or
+normalized metadata use different validators.
 
 Clients can send that validator in `If-None-Match`. Exact matches, weak
 validators, validator lists containing a match, and `*` return HTTP 304 with an
@@ -500,6 +588,6 @@ contracts and are not assigned validators.
 
 The validators are deterministic over immutable representations. They add no
 database, persistence, write path, expiration policy, or external cache, and
-do not cover endpoints beyond the six GET surfaces listed above.
+do not cover endpoints beyond the eight GET surfaces listed above.
 
 Run the backend tests with `npm test`.

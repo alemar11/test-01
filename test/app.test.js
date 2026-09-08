@@ -8,6 +8,7 @@ const capabilityManifest = require("../src/capabilities");
 const { facetItems } = require("../src/item-facets");
 const { sortItems } = require("../src/item-sort");
 const { summarizeItems } = require("../src/item-summary");
+const { vocabularyItems } = require("../src/item-vocabulary");
 const itemsRepository = require("../src/items-repository");
 
 const expectedItems = [
@@ -35,6 +36,11 @@ const expectedFacets = {
   total: 2,
   byLabel: { featured: 1, "read-only": 2, support: 1 },
   byCategory: { "core-service": 1, "support-service": 1 },
+};
+const expectedVocabulary = {
+  statuses: ["active"],
+  categories: ["core-service", "support-service"],
+  labels: ["featured", "read-only", "support"],
 };
 const expectedItemFilterControls = {
   status: {
@@ -104,6 +110,25 @@ const expectedCapabilityManifest = {
       },
     },
     {
+      id: "item-batch",
+      method: "GET",
+      path: "/api/items/batch",
+      controls: {
+        ids: {
+          type: "string",
+          cardinality: "single",
+          nonBlank: true,
+          minimum: 1,
+          maximum: 50,
+        },
+      },
+    },
+    {
+      id: "item-vocabulary",
+      method: "GET",
+      path: "/api/items/vocabulary",
+    },
+    {
       id: "item-summary",
       method: "GET",
       path: "/api/items/summary",
@@ -150,6 +175,8 @@ test("capability manifest exposes an exact immutable schema version 1 contract",
   assert.deepEqual(capabilityIds, [
     "health",
     "item-collection",
+    "item-batch",
+    "item-vocabulary",
     "item-summary",
     "item-facets",
     "item-detail",
@@ -326,6 +353,38 @@ test("repository-backed items expose stable immutable categories and labels", ()
   assert.deepEqual(itemsRepository.listItems(), expectedItems);
 });
 
+test("item vocabularies deduplicate and sort repository fields", () => {
+  assert.deepEqual(
+    vocabularyItems([
+      {
+        status: "beta",
+        category: "z-category",
+        labels: ["z-label", "shared-label"],
+      },
+      {
+        status: "alpha",
+        category: "a-category",
+        labels: ["shared-label", "a-label"],
+      },
+      {
+        status: "beta",
+        category: "z-category",
+        labels: ["z-label"],
+      },
+    ]),
+    {
+      statuses: ["alpha", "beta"],
+      categories: ["a-category", "z-category"],
+      labels: ["a-label", "shared-label", "z-label"],
+    },
+  );
+  assert.deepEqual(vocabularyItems([]), {
+    statuses: [],
+    categories: [],
+    labels: [],
+  });
+});
+
 function startServer() {
   return new Promise((resolve, reject) => {
     const instance = app.listen(0, "127.0.0.1");
@@ -449,6 +508,7 @@ test("advertised paths and filter semantics match provider behavior", async () =
   const queryByCapabilityId = {
     "item-collection":
       `?${sharedFilters}&sort=name&order=desc&page=1&limit=100`,
+    "item-batch": "?ids=item-2,missing-item,item-1",
     "item-summary": `?${sharedFilters}`,
     "item-facets": `?${sharedFilters}`,
   };
@@ -465,6 +525,8 @@ test("advertised paths and filter semantics match provider behavior", async () =
 
   const health = resultsByCapabilityId.health;
   const collection = resultsByCapabilityId["item-collection"];
+  const batch = resultsByCapabilityId["item-batch"];
+  const vocabulary = resultsByCapabilityId["item-vocabulary"];
   const summary = resultsByCapabilityId["item-summary"];
   const facets = resultsByCapabilityId["item-facets"];
   const detail = resultsByCapabilityId["item-detail"];
@@ -485,6 +547,13 @@ test("advertised paths and filter semantics match provider behavior", async () =
       limit: 100,
     }),
   });
+  assert.equal(batch.status, 200);
+  assert.deepEqual(batch.body, {
+    data: [expectedItems[1], expectedItems[0]],
+    missing: ["missing-item"],
+  });
+  assert.equal(vocabulary.status, 200);
+  assert.deepEqual(vocabulary.body, { data: expectedVocabulary });
   assert.deepEqual(
     summary.body,
     expectedSummaryResponse({
@@ -710,6 +779,135 @@ test("GET /api/items preserves the exact no-query response", async () => {
   assert.deepEqual(result.body, { data: expectedItems });
   assert.deepEqual(Object.keys(result.body), ["data"]);
 });
+
+test("GET /api/items/batch returns ordered found and missing partitions", async () => {
+  const path = "/api/items/batch?ids=item-2,missing-item,item-1";
+  const firstResult = await get(path);
+  const secondResult = await get(path);
+
+  assert.equal(firstResult.status, 200);
+  assert.deepEqual(firstResult.body, {
+    data: [expectedItems[1], expectedItems[0]],
+    missing: ["missing-item"],
+  });
+  assert.equal(secondResult.status, 200);
+  assert.deepEqual(secondResult.body, firstResult.body);
+  assert.equal(assertValidEtag(secondResult), assertValidEtag(firstResult));
+
+  const conditionalResult = await request(path, {
+    headers: { "If-None-Match": assertValidEtag(firstResult) },
+  });
+
+  assert.equal(conditionalResult.status, 304);
+  assert.equal(conditionalResult.text, "");
+  assert.equal(
+    conditionalResult.headers.get("etag"),
+    firstResult.headers.get("etag"),
+  );
+
+  firstResult.body.data[0].name = "Changed item";
+  firstResult.body.missing.push("changed-item");
+  const afterMutation = await get(path);
+
+  assert.deepEqual(afterMutation.body, {
+    data: [expectedItems[1], expectedItems[0]],
+    missing: ["missing-item"],
+  });
+});
+
+test("GET /api/items/vocabulary returns deterministic full-set values", async () => {
+  const firstResult = await get("/api/items/vocabulary");
+  const secondResult = await get("/api/items/vocabulary");
+
+  assert.equal(firstResult.status, 200);
+  assert.equal(secondResult.status, 200);
+  assert.deepEqual(firstResult.body, { data: expectedVocabulary });
+  assert.deepEqual(secondResult.body, firstResult.body);
+  assert.equal(firstResult.text, JSON.stringify({ data: expectedVocabulary }));
+  assert.equal(secondResult.text, firstResult.text);
+  assert.deepEqual(Object.keys(firstResult.body), ["data"]);
+  assert.deepEqual(Object.keys(firstResult.body.data), [
+    "statuses",
+    "categories",
+    "labels",
+  ]);
+  for (const values of Object.values(firstResult.body.data)) {
+    assert.ok(values.every((value) => typeof value === "string"));
+    assert.equal(new Set(values).size, values.length);
+    assert.ok(
+      values.every(
+        (value, index) => index === 0 || values[index - 1] < value,
+      ),
+    );
+  }
+  assert.equal(
+    assertValidEtag(firstResult),
+    assertValidEtag(secondResult),
+  );
+
+  const conditionalResult = await request("/api/items/vocabulary", {
+    headers: { "If-None-Match": firstResult.headers.get("etag") },
+  });
+
+  assert.equal(conditionalResult.status, 304);
+  assert.equal(conditionalResult.body, null);
+  assert.equal(conditionalResult.text, "");
+  assert.equal(
+    conditionalResult.headers.get("etag"),
+    firstResult.headers.get("etag"),
+  );
+});
+
+test("GET /api/items/batch accepts all-known and all-missing IDs", async () => {
+  const allKnown = await get("/api/items/batch?ids=item-1,item-2");
+  const allMissing = await get("/api/items/batch?ids=missing-1,missing_2");
+
+  assert.deepEqual(allKnown.body, {
+    data: expectedItems,
+    missing: [],
+  });
+  assert.deepEqual(allMissing.body, {
+    data: [],
+    missing: ["missing-1", "missing_2"],
+  });
+});
+
+const invalidBatchQueries = [
+  ["missing ids", ""],
+  ["unsupported key", "unknown=value"],
+  ["multiple keys", "ids=item-1&other=value"],
+  ["repeated ids", "ids=item-1&ids=item-2"],
+  ["structured ids", "ids%5B0%5D=item-1"],
+  ["empty ids", "ids="],
+  ["blank ids", "ids=%20%20"],
+  ["empty component", "ids=item-1,,item-2"],
+  ["leading separator", "ids=,item-1"],
+  ["trailing separator", "ids=item-1,"],
+  ["whitespace component", "ids=item-1,%20item-2"],
+  ["invalid character", "ids=item.1"],
+  ["duplicate ids", "ids=item-1,item-1"],
+  [
+    "too many ids",
+    `ids=${Array.from({ length: 51 }, (_, index) => `missing-${index}`).join(",")}`,
+  ],
+];
+
+for (const [label, query] of invalidBatchQueries) {
+  test(`GET /api/items/batch rejects invalid query: ${label}`, async () => {
+    const result = await get(
+      query === "" ? "/api/items/batch" : `/api/items/batch?${query}`,
+    );
+
+    assert.equal(result.status, 400);
+    assert.deepEqual(result.body, {
+      error: {
+        code: "invalid_query",
+        message: "Invalid query parameters",
+      },
+    });
+    assert.equal(result.headers.get("etag"), null);
+  });
+}
 
 test("GET /api/items/summary returns deterministic full-set counts", async () => {
   const firstResult = await get("/api/items/summary");
@@ -1180,6 +1378,26 @@ test("GET /api/items accepts the maximum limit", async () => {
 
 for (const query of [
   "unknown=value",
+  "status=active",
+  "status=active&status=inactive",
+  "status[mode]=active",
+]) {
+  test(`GET /api/items/vocabulary rejects query: ${query}`, async () => {
+    const result = await get(`/api/items/vocabulary?${query}`);
+
+    assert.equal(result.status, 400);
+    assert.deepEqual(result.body, {
+      error: {
+        code: "invalid_query",
+        message: "Invalid query parameters",
+      },
+    });
+    assert.equal(result.headers.get("etag"), null);
+  });
+}
+
+for (const query of [
+  "unknown=value",
   "status=active&status=inactive",
   "category=core-service&category=support-service",
   "label=featured&label=read-only",
@@ -1554,6 +1772,8 @@ test("successful baseline GET representations have stable validators", async () 
     "/api/items",
     "/api/items?q=item",
     "/api/items?label=read-only",
+    "/api/items/batch?ids=item-1",
+    "/api/items/vocabulary",
     "/api/items/summary?label=read-only",
     "/api/items/facets?label=read-only",
     "/api/items/item-1",
@@ -1854,6 +2074,8 @@ test("unknown routes return the generic JSON 404 contract", async () => {
 for (const path of [
   "/api/capabilities",
   "/api/items",
+  "/api/items/batch?ids=item-1",
+  "/api/items/vocabulary",
   "/api/items/summary",
   "/api/items/facets",
   "/api/items/item-1",
