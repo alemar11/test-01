@@ -44,6 +44,8 @@ small, deterministic, and read-only.
 - `GET /api/capabilities` exposes the schema version 1 capability manifest in
   stable order with deterministic cache validators. It omits fixture-instance
   inventory, volatile metadata, writes, persistence, and runtime introspection.
+- `GET /api/coordination-probe` is a dummy-project skill-validation read that
+  returns HTTP 200 with exactly `{ "protocol": "se-coordination-v2", "revision": 1 }`.
 - The API exposes GET-only health, capability-discovery, item, item-batch,
   item-vocabulary, item-summary, and item-facet reads. It has no database,
   persistence, or write operation.

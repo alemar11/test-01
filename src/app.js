@@ -118,6 +118,10 @@ function parseBatchIds(query) {
   return ids;
 }
 
+app.get("/api/coordination-probe", (request, response) => {
+  response.json({ protocol: "se-coordination-v2", revision: 1 });
+});
+
 app.get("/health", (request, response) => {
   sendValidatedJson(request, response, health);
 });

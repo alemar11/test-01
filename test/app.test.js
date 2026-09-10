@@ -745,6 +745,17 @@ test("capability discovery rejects unadvertised query controls", async () => {
   assert.equal(result.headers.get("etag"), null);
 });
 
+test("GET /api/coordination-probe returns the exact coordination contract", async () => {
+  const result = await get("/api/coordination-probe");
+
+  assert.equal(result.status, 200);
+  assert.match(result.headers.get("content-type"), /^application\/json\b/);
+  assert.deepEqual(result.body, {
+    protocol: "se-coordination-v2",
+    revision: 1,
+  });
+});
+
 test("GET /health returns deterministic operational diagnostics", async () => {
   const firstResult = await get("/health");
   const secondResult = await get("/health");
