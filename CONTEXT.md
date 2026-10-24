@@ -46,6 +46,8 @@ small, deterministic, and read-only.
   inventory, volatile metadata, writes, persistence, and runtime introspection.
 - `GET /api/coordination-probe` is a dummy-project skill-validation read that
   returns HTTP 200 with exactly `{ "protocol": "se-coordination-v2", "revision": 1 }`.
+- `GET /api/version` returns HTTP 200 with exactly the `package.json` `name` and
+  `version` as `{ "name": ..., "version": ... }`.
 - The API exposes GET-only health, capability-discovery, item, item-batch,
   item-vocabulary, item-summary, and item-facet reads. It has no database,
   persistence, or write operation.
