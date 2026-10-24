@@ -58,6 +58,9 @@ small, deterministic, and read-only.
   edits application source, reads package metadata, or creates commits. The
   resolver exposes `is_final` for downstream jobs that must distinguish a
   stable tag from a release candidate without reparsing it.
+- `.github/workflows/ci.yml` runs `npm ci` and `npm test` on Node 22 for pull
+  requests to `main` and pushes to `main`. It has read-only repository
+  permissions.
 
 ## Scoped Contexts
 
