@@ -756,6 +756,17 @@ test("GET /api/coordination-probe returns the exact coordination contract", asyn
   });
 });
 
+test("GET /api/version returns the package name and version", async () => {
+  const result = await get("/api/version");
+
+  assert.equal(result.status, 200);
+  assert.match(result.headers.get("content-type"), /^application\/json\b/);
+  assert.deepEqual(result.body, {
+    name: packageMetadata.name,
+    version: packageMetadata.version,
+  });
+});
+
 test("GET /health returns deterministic operational diagnostics", async () => {
   const firstResult = await get("/health");
   const secondResult = await get("/health");

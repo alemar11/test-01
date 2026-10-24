@@ -14,6 +14,7 @@ const health = Object.freeze({
   service: Object.freeze({ name, version }),
   checks: Object.freeze({ liveness: "ok", readiness: "ready" }),
 });
+const versionInfo = Object.freeze({ name, version });
 const supportedItemQueryParameters = new Set([
   "status",
   "category",
@@ -120,6 +121,10 @@ function parseBatchIds(query) {
 
 app.get("/api/coordination-probe", (request, response) => {
   response.json({ protocol: "se-coordination-v2", revision: 1 });
+});
+
+app.get("/api/version", (request, response) => {
+  response.json(versionInfo);
 });
 
 app.get("/health", (request, response) => {
