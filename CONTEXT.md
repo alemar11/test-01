@@ -30,6 +30,8 @@ small, deterministic, and read-only.
   fixture-read boundary.
 - `src/runtime-info.js` exposes `runtimeInfo()`, a frozen `{ node }` object
   that holds the running `process.version`.
+- `src/uptime.js` exposes `uptimeSeconds()`, the whole seconds of
+  `process.uptime()`.
 - `GET /api/items/batch` provides a bounded, ordered repository read with
   separate found and missing ID partitions and no mutation or persistence.
 - `src/item-summary.js` derives totals and prototype-free grouping maps from a
@@ -52,8 +54,10 @@ small, deterministic, and read-only.
   `version` plus `runtimeInfo()` as
   `{ "name": ..., "version": ..., "runtime": { "node": ... } }`. The `node`
   value is fixed for the process and varies by host.
-- The API exposes GET-only health, capability-discovery, item, item-batch,
-  item-vocabulary, item-summary, and item-facet reads. It has no database,
+- `GET /api/uptime` returns HTTP 200 with `{ "uptimeSeconds": <integer> }`,
+  the whole seconds since the process started.
+- The API exposes GET-only health, uptime, capability-discovery, item,
+  item-batch, item-vocabulary, item-summary, and item-facet reads. It has no database,
   persistence, or write operation.
 - `npm run build` checks source syntax; `npm test` verifies the HTTP contract.
 - Release automation is confined to
