@@ -28,6 +28,8 @@ small, deterministic, and read-only.
 - `src/item-vocabulary.js` derives unique, ordinal-sorted status, category, and
   flattened label values from a repository result without introducing another
   fixture-read boundary.
+- `src/runtime-info.js` exposes `runtimeInfo()`, a frozen `{ node }` object
+  that holds the running `process.version`.
 - `GET /api/items/batch` provides a bounded, ordered repository read with
   separate found and missing ID partitions and no mutation or persistence.
 - `src/item-summary.js` derives totals and prototype-free grouping maps from a
