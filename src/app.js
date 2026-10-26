@@ -8,6 +8,7 @@ const { summarizeItems } = require("./item-summary");
 const { vocabularyItems } = require("./item-vocabulary");
 const { findItemById, listItems } = require("./items-repository");
 const { runtimeInfo } = require("./runtime-info");
+const { uptimeSeconds } = require("./uptime");
 
 const app = express();
 const health = Object.freeze({
@@ -126,6 +127,10 @@ app.get("/api/coordination-probe", (request, response) => {
 
 app.get("/api/version", (request, response) => {
   response.json(versionInfo);
+});
+
+app.get("/api/uptime", (request, response) => {
+  response.json(uptimeSeconds);
 });
 
 app.get("/health", (request, response) => {

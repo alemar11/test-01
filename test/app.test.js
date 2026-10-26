@@ -768,6 +768,12 @@ test("GET /api/version returns the package name, version, and runtime", async ()
   });
 });
 
+test("GET /api/uptime returns the process uptime", async () => {
+  const result = await get("/api/uptime");
+
+  assert.equal(result.status, 200);
+});
+
 test("GET /health returns deterministic operational diagnostics", async () => {
   const firstResult = await get("/health");
   const secondResult = await get("/health");
