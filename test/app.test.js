@@ -756,7 +756,7 @@ test("GET /api/coordination-probe returns the exact coordination contract", asyn
   });
 });
 
-test("GET /api/version returns the package name and version", async () => {
+test("GET /api/version returns the package name, version, and runtime", async () => {
   const result = await get("/api/version");
 
   assert.equal(result.status, 200);
@@ -764,6 +764,7 @@ test("GET /api/version returns the package name and version", async () => {
   assert.deepEqual(result.body, {
     name: packageMetadata.name,
     version: packageMetadata.version,
+    runtime: { node: process.version },
   });
 });
 

@@ -49,7 +49,9 @@ small, deterministic, and read-only.
 - `GET /api/coordination-probe` is a dummy-project skill-validation read that
   returns HTTP 200 with exactly `{ "protocol": "se-coordination-v2", "revision": 1 }`.
 - `GET /api/version` returns HTTP 200 with exactly the `package.json` `name` and
-  `version` as `{ "name": ..., "version": ... }`.
+  `version` plus `runtimeInfo()` as
+  `{ "name": ..., "version": ..., "runtime": { "node": ... } }`. The `node`
+  value is fixed for the process and varies by host.
 - The API exposes GET-only health, capability-discovery, item, item-batch,
   item-vocabulary, item-summary, and item-facet reads. It has no database,
   persistence, or write operation.

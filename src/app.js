@@ -7,6 +7,7 @@ const { facetItems } = require("./item-facets");
 const { summarizeItems } = require("./item-summary");
 const { vocabularyItems } = require("./item-vocabulary");
 const { findItemById, listItems } = require("./items-repository");
+const { runtimeInfo } = require("./runtime-info");
 
 const app = express();
 const health = Object.freeze({
@@ -14,7 +15,7 @@ const health = Object.freeze({
   service: Object.freeze({ name, version }),
   checks: Object.freeze({ liveness: "ok", readiness: "ready" }),
 });
-const versionInfo = Object.freeze({ name, version });
+const versionInfo = Object.freeze({ name, version, runtime: runtimeInfo() });
 const supportedItemQueryParameters = new Set([
   "status",
   "category",
