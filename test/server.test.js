@@ -16,6 +16,7 @@ test("server exits non-zero when its port is already in use", async (t) => {
     cwd: repoRoot,
     env: { ...process.env, PORT: String(port) },
     timeout: 5000,
+    killSignal: "SIGKILL",
   });
   let stdout = "";
   let stderr = "";
@@ -26,7 +27,7 @@ test("server exits non-zero when its port is already in use", async (t) => {
   );
 
   assert.equal(signal, null, `server did not exit on its own: ${signal}`);
-  assert.notEqual(code, 0);
+  assert.notEqual(code, 0, `server exited 0; stdout: ${stdout}`);
   assert.ok(stderr.includes(String(port)), `stderr names the port: ${stderr}`);
   assert.match(stderr, /EADDRINUSE/);
   assert.doesNotMatch(stdout, /listening/);
