@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const { createHash } = require("node:crypto");
+const http = require("node:http");
 const { test } = require("node:test");
 
 const packageMetadata = require("../package.json");
@@ -782,6 +783,61 @@ test("capability discovery rejects unadvertised query controls", async () => {
   });
   assert.equal(result.headers.get("etag"), null);
 });
+
+const readRoutes = [
+  "/api/coordination-probe",
+  "/api/version",
+  "/health",
+  "/api/capabilities",
+  "/api/items",
+  "/api/items?status=active&limit=1",
+  "/api/items/summary",
+  "/api/items/facets",
+  "/api/items/batch?ids=item-1,item-2",
+  "/api/items/vocabulary",
+  "/api/items/item-1",
+];
+
+// fetch forces Connection: close on HEAD, so node:http asks for keep-alive
+// itself to let the connection headers be compared too. Each request gets its
+// own socket because a pooled one can outlive the server's keep-alive timeout.
+function keepAliveRequest(path, method) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      method,
+      agent: false,
+      headers: { connection: "keep-alive" },
+    };
+    http
+      .request(`${baseUrl}${path}`, options, (response) => {
+        let text = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          text += chunk;
+        });
+        response.on("end", () => {
+          const { headers } = response;
+          delete headers.date;
+          resolve({ status: response.statusCode, headers, text });
+        });
+      })
+      .on("error", reject)
+      .end();
+  });
+}
+
+for (const path of readRoutes) {
+  test(`HEAD ${path} matches GET without a body`, async () => {
+    const getResult = await keepAliveRequest(path, "GET");
+    const headResult = await keepAliveRequest(path, "HEAD");
+
+    assert.equal(getResult.status, 200);
+    assert.notEqual(getResult.text, "");
+    assert.equal(headResult.status, getResult.status);
+    assert.deepEqual(headResult.headers, getResult.headers);
+    assert.equal(headResult.text, "");
+  });
+}
 
 test("GET /api/coordination-probe returns the exact coordination contract", async () => {
   const result = await get("/api/coordination-probe");
