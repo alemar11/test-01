@@ -156,7 +156,6 @@ const expectedCapabilityManifest = {
 
 let server;
 let baseUrl;
-const keepAliveAgent = new http.Agent({ keepAlive: true });
 
 function assertDeepFrozen(value) {
   assert.equal(Object.isFrozen(value), true);
@@ -409,7 +408,6 @@ test.before(async () => {
 });
 
 test.after(async () => {
-  keepAliveAgent.destroy();
   if (server) {
     await stopServer(server);
   }
@@ -762,11 +760,16 @@ const readRoutes = [
   "/api/items/item-1",
 ];
 
-// fetch forces Connection: close on HEAD, so a keep-alive node:http agent
-// lets the connection headers be compared too.
+// fetch forces Connection: close on HEAD, so node:http asks for keep-alive
+// itself to let the connection headers be compared too. Each request gets its
+// own socket because a pooled one can outlive the server's keep-alive timeout.
 function keepAliveRequest(path, method) {
   return new Promise((resolve, reject) => {
-    const options = { method, agent: keepAliveAgent };
+    const options = {
+      method,
+      agent: false,
+      headers: { connection: "keep-alive" },
+    };
     http
       .request(`${baseUrl}${path}`, options, (response) => {
         let text = "";
@@ -775,7 +778,8 @@ function keepAliveRequest(path, method) {
           text += chunk;
         });
         response.on("end", () => {
-          const { date, ...headers } = response.headers;
+          const { headers } = response;
+          delete headers.date;
           resolve({ status: response.statusCode, headers, text });
         });
       })
