@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const { createHash } = require("node:crypto");
+const http = require("node:http");
 const { test } = require("node:test");
 
 const packageMetadata = require("../package.json");
@@ -155,6 +156,7 @@ const expectedCapabilityManifest = {
 
 let server;
 let baseUrl;
+const keepAliveAgent = new http.Agent({ keepAlive: true });
 
 function assertDeepFrozen(value) {
   assert.equal(Object.isFrozen(value), true);
@@ -407,6 +409,7 @@ test.before(async () => {
 });
 
 test.after(async () => {
+  keepAliveAgent.destroy();
   if (server) {
     await stopServer(server);
   }
@@ -746,44 +749,53 @@ test("capability discovery rejects unadvertised query controls", async () => {
 });
 
 const readRoutes = [
-  { path: "/api/coordination-probe" },
-  { path: "/api/version" },
-  { path: "/health" },
-  { path: "/api/capabilities" },
-  { path: "/api/items" },
-  { path: "/api/items/summary" },
-  { path: "/api/items/facets" },
-  { path: "/api/items/batch?ids=item-1,item-2" },
-  { path: "/api/items/vocabulary" },
-  { path: "/api/items/item-1" },
+  "/api/coordination-probe",
+  "/api/version",
+  "/health",
+  "/api/capabilities",
+  "/api/items",
+  "/api/items?status=active&limit=1",
+  "/api/items/summary",
+  "/api/items/facets",
+  "/api/items/batch?ids=item-1,item-2",
+  "/api/items/vocabulary",
+  "/api/items/item-1",
 ];
 
-// fetch sends Connection: close on HEAD and keep-alive on GET, and the server
-// echoes the client's choice, so those headers differ by client, not by route.
-function comparableHeaders(headers) {
-  const comparable = Object.fromEntries(headers);
-  delete comparable.date;
-  delete comparable.connection;
-  delete comparable["keep-alive"];
-  return comparable;
+// fetch forces Connection: close on HEAD, so a keep-alive node:http agent
+// lets the connection headers be compared too.
+function keepAliveRequest(path, method) {
+  return new Promise((resolve, reject) => {
+    const options = { method, agent: keepAliveAgent };
+    http
+      .request(`${baseUrl}${path}`, options, (response) => {
+        let text = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          text += chunk;
+        });
+        response.on("end", () => {
+          const { date, ...headers } = response.headers;
+          resolve({ status: response.statusCode, headers, text });
+        });
+      })
+      .on("error", reject)
+      .end();
+  });
 }
 
-test("HEAD on every GET read route matches GET without a body", async () => {
-  for (const { path } of readRoutes) {
-    const getResult = await get(path);
-    const headResult = await request(path, { method: "HEAD" });
+for (const path of readRoutes) {
+  test(`HEAD ${path} matches GET without a body`, async () => {
+    const getResult = await keepAliveRequest(path, "GET");
+    const headResult = await keepAliveRequest(path, "HEAD");
 
-    assert.equal(getResult.status, 200, path);
-    assert.notEqual(getResult.text, "", path);
-    assert.equal(headResult.status, getResult.status, path);
-    assert.deepEqual(
-      comparableHeaders(headResult.headers),
-      comparableHeaders(getResult.headers),
-      path,
-    );
-    assert.equal(headResult.text, "", path);
-  }
-});
+    assert.equal(getResult.status, 200);
+    assert.notEqual(getResult.text, "");
+    assert.equal(headResult.status, getResult.status);
+    assert.deepEqual(headResult.headers, getResult.headers);
+    assert.equal(headResult.text, "");
+  });
+}
 
 test("GET /api/coordination-probe returns the exact coordination contract", async () => {
   const result = await get("/api/coordination-probe");
