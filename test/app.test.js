@@ -470,9 +470,9 @@ function expectedSummaryResponse({ data = expectedSummary, insights = {} } = {})
   return { data, insights: expectedInsights(insights) };
 }
 
-function expectedCountResponse({ total = 2, filters = {} } = {}) {
+function expectedCountResponse({ count = 2, filters = {} } = {}) {
   return {
-    data: { total },
+    data: { count },
     filters: {
       status: null,
       category: null,
@@ -616,7 +616,7 @@ test("advertised paths and filter semantics match provider behavior", async () =
   assert.deepEqual(
     count.body,
     expectedCountResponse({
-      total: 1,
+      count: 1,
       filters: {
         status: "active",
         category: "core-service",
@@ -638,9 +638,9 @@ test("advertised paths and filter semantics match provider behavior", async () =
     ["/api/items/facets?status=ACTIVE", (body) => body.data.total],
     ["/api/items/facets?category=CORE-SERVICE", (body) => body.data.total],
     ["/api/items/facets?label=FEATURED", (body) => body.data.total],
-    ["/api/items/count?status=ACTIVE", (body) => body.data.total],
-    ["/api/items/count?category=CORE-SERVICE", (body) => body.data.total],
-    ["/api/items/count?label=FEATURED", (body) => body.data.total],
+    ["/api/items/count?status=ACTIVE", (body) => body.data.count],
+    ["/api/items/count?category=CORE-SERVICE", (body) => body.data.count],
+    ["/api/items/count?label=FEATURED", (body) => body.data.count],
   ]) {
     const result = await get(path);
 
@@ -1093,7 +1093,7 @@ test("GET /api/items/count returns the deterministic full-set total", async () =
 
   assert.equal(firstResult.status, 200);
   assert.deepEqual(firstResult.body, expectedCountResponse());
-  assert.deepEqual(Object.keys(firstResult.body.data), ["total"]);
+  assert.deepEqual(Object.keys(firstResult.body.data), ["count"]);
   assert.equal(secondResult.text, firstResult.text);
   assert.equal(assertValidEtag(secondResult), assertValidEtag(firstResult));
 });
@@ -1107,7 +1107,7 @@ test("GET /api/items/count composes exact filters and normalized search", async 
   assert.deepEqual(
     result.body,
     expectedCountResponse({
-      total: 1,
+      count: 1,
       filters: {
         status: "active",
         category: "support-service",
@@ -1125,7 +1125,7 @@ test("GET /api/items/count returns zero for zero matches", async () => {
   assert.deepEqual(
     result.body,
     expectedCountResponse({
-      total: 0,
+      count: 0,
       filters: { label: "featured", q: "missing" },
     }),
   );
@@ -1139,11 +1139,11 @@ test("GET /api/items/count preserves exact status and category matching", async 
 
   assert.deepEqual(
     paddedStatus.body,
-    expectedCountResponse({ total: 0, filters: { status: " active " } }),
+    expectedCountResponse({ count: 0, filters: { status: " active " } }),
   );
   assert.deepEqual(
     differentCategoryCase.body,
-    expectedCountResponse({ total: 0, filters: { category: "CORE-SERVICE" } }),
+    expectedCountResponse({ count: 0, filters: { category: "CORE-SERVICE" } }),
   );
 });
 
@@ -1162,7 +1162,7 @@ test("GET /api/items/count matches the collection total for the same filters", a
 
     assert.equal(count.status, 200, filters);
     assert.equal(
-      count.body.data.total,
+      count.body.data.count,
       collection.body.pagination.total,
       filters,
     );

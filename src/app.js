@@ -257,7 +257,7 @@ app.get("/api/items/count", (request, response) => {
   const normalizedFilters = normalizeItemFilters(filters);
 
   sendValidatedJson(request, response, {
-    data: { total: listItems(normalizedFilters).length },
+    data: { count: listItems(normalizedFilters).length },
     filters: normalizedFilters,
   });
 });
