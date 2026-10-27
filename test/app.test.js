@@ -745,6 +745,46 @@ test("capability discovery rejects unadvertised query controls", async () => {
   assert.equal(result.headers.get("etag"), null);
 });
 
+const readRoutes = [
+  { path: "/api/coordination-probe" },
+  { path: "/api/version" },
+  { path: "/health" },
+  { path: "/api/capabilities" },
+  { path: "/api/items" },
+  { path: "/api/items/summary" },
+  { path: "/api/items/facets" },
+  { path: "/api/items/batch?ids=item-1,item-2" },
+  { path: "/api/items/vocabulary" },
+  { path: "/api/items/item-1" },
+];
+
+// fetch sends Connection: close on HEAD and keep-alive on GET, and the server
+// echoes the client's choice, so those headers differ by client, not by route.
+function comparableHeaders(headers) {
+  const comparable = Object.fromEntries(headers);
+  delete comparable.date;
+  delete comparable.connection;
+  delete comparable["keep-alive"];
+  return comparable;
+}
+
+test("HEAD on every GET read route matches GET without a body", async () => {
+  for (const { path } of readRoutes) {
+    const getResult = await get(path);
+    const headResult = await request(path, { method: "HEAD" });
+
+    assert.equal(getResult.status, 200, path);
+    assert.notEqual(getResult.text, "", path);
+    assert.equal(headResult.status, getResult.status, path);
+    assert.deepEqual(
+      comparableHeaders(headResult.headers),
+      comparableHeaders(getResult.headers),
+      path,
+    );
+    assert.equal(headResult.text, "", path);
+  }
+});
+
 test("GET /api/coordination-probe returns the exact coordination contract", async () => {
   const result = await get("/api/coordination-probe");
 
