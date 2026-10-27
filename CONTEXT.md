@@ -7,6 +7,7 @@ small, deterministic, and read-only.
 ## Vocabulary and boundaries
 
 - `src/server.js` starts the process; `src/app.js` owns the HTTP application.
+  If the port cannot be bound, startup reports the error on stderr and exits 1.
 - `src/capabilities.js` owns the deeply frozen schema-versioned provider
   capability manifest. It advertises only stable read surfaces and their
   compatibility-relevant controls, constrained values, defaults, and limits.
