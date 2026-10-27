@@ -112,6 +112,12 @@ const manifest = deepFreeze({
       controls: { ...itemFilterControls },
     },
     {
+      id: "item-count",
+      method: "GET",
+      path: "/api/items/count",
+      controls: { ...itemFilterControls },
+    },
+    {
       id: "item-detail",
       method: "GET",
       path: "/api/items/:id",
