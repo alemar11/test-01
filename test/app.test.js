@@ -2135,3 +2135,54 @@ test("conditional headers do not change error or non-GET contracts", async () =>
     assert.equal(result.headers.get("etag"), null);
   }
 });
+
+// `date` varies per response. `connection` and `keep-alive` are hop-by-hop:
+// fetch sends `Connection: close` on HEAD only, and the server echoes it.
+const headersExemptFromHeadParity = new Set([
+  "date",
+  "connection",
+  "keep-alive",
+]);
+
+function representationHeaders(headers) {
+  return [...headers].filter(
+    ([name]) => !headersExemptFromHeadParity.has(name),
+  );
+}
+
+for (const path of [
+  "/api/coordination-probe",
+  "/api/version",
+  "/health",
+  "/api/capabilities",
+  "/api/items",
+  "/api/items/summary",
+  "/api/items/facets",
+  "/api/items/batch?ids=item-1,missing-item",
+  "/api/items/vocabulary",
+  "/api/items/item-1",
+]) {
+  test(`HEAD ${path} matches GET without a body`, async () => {
+    const getResponse = await fetch(`${baseUrl}${path}`);
+    const getBody = await getResponse.arrayBuffer();
+    const headResponse = await fetch(`${baseUrl}${path}`, { method: "HEAD" });
+    const headBody = await headResponse.arrayBuffer();
+
+    assert.equal(getResponse.status, 200);
+    assert.equal(headResponse.status, 200);
+    assert.ok(getBody.byteLength > 0);
+    assert.equal(headBody.byteLength, 0);
+    assert.equal(
+      headResponse.headers.get("content-length"),
+      String(getBody.byteLength),
+    );
+    assert.equal(
+      headResponse.headers.get("etag"),
+      getResponse.headers.get("etag"),
+    );
+    assert.deepEqual(
+      representationHeaders(headResponse.headers),
+      representationHeaders(getResponse.headers),
+    );
+  });
+}
