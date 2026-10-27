@@ -244,6 +244,24 @@ app.get("/api/items/facets", (request, response) => {
   });
 });
 
+app.get("/api/items/count", (request, response) => {
+  const filters = parseItemFilters(
+    request.query,
+    supportedSummaryQueryParameters,
+  );
+  if (filters === null) {
+    invalidQuery(response);
+    return;
+  }
+
+  const normalizedFilters = normalizeItemFilters(filters);
+
+  sendValidatedJson(request, response, {
+    data: { count: listItems(normalizedFilters).length },
+    filters: normalizedFilters,
+  });
+});
+
 app.get("/api/items/batch", (request, response) => {
   const ids = parseBatchIds(request.query);
   if (ids === null) {

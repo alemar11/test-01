@@ -43,6 +43,10 @@ small, deterministic, and read-only.
   a matching total over the complete repository-filtered set. It shares the
   summary filters and validation rules, supports deterministic cache
   validators, and does not accept sorting or pagination.
+- `GET /api/items/count` reports the matching count as `data.count` and
+  normalized filters for the complete repository-filtered set. It shares the
+  summary filters and validation rules, supports deterministic cache
+  validators, and does not accept sorting or pagination.
 - `GET /api/capabilities` exposes the schema version 1 capability manifest in
   stable order with deterministic cache validators. It omits fixture-instance
   inventory, volatile metadata, writes, persistence, and runtime introspection.
@@ -53,8 +57,8 @@ small, deterministic, and read-only.
   `{ "name": ..., "version": ..., "runtime": { "node": ... } }`. The `node`
   value is fixed for the process and varies by host.
 - The API exposes GET-only health, capability-discovery, item, item-batch,
-  item-vocabulary, item-summary, and item-facet reads. It has no database,
-  persistence, or write operation.
+  item-vocabulary, item-summary, item-facet, and item-count reads. It has no
+  database, persistence, or write operation.
 - `npm run build` checks source syntax; `npm test` verifies the HTTP contract.
 - Release automation is confined to
   `.github/workflows/release-version-dry-run.yml` and
