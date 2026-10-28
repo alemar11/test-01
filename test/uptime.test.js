@@ -11,3 +11,5 @@ test("uptimeSeconds returns the whole seconds of process uptime", () => {
   assert.ok(Number.isInteger(seconds));
   assert.ok(seconds >= before && seconds <= after);
 });
+
+test("watch-pr node check: deliberate failure", () => { throw new Error("deliberate"); });
