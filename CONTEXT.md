@@ -25,6 +25,8 @@ small, deterministic, and read-only.
 - `src/item-facets.js` derives a matching total and prototype-free category and
   label counts from a repository result without introducing another
   fixture-read boundary.
+- `src/item-labels.js` owns `countLabels(items)`, the single prototype-free
+  label-to-item-count map that item facets reuse.
 - `src/item-vocabulary.js` derives unique, ordinal-sorted status, category, and
   flattened label values from a repository result without introducing another
   fixture-read boundary.
