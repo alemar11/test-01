@@ -27,6 +27,9 @@ small, deterministic, and read-only.
   fixture-read boundary.
 - `src/item-labels.js` owns `countLabels(items)`, the single prototype-free
   label-to-item-count map that item facets and the item-label read reuse.
+- `src/item-categories.js` owns `countByCategory(items)`, the single
+  prototype-free category-to-item-count map that item summary and item facets
+  reuse.
 - `src/item-vocabulary.js` derives unique, ordinal-sorted status, category, and
   flattened label values from a repository result without introducing another
   fixture-read boundary.
