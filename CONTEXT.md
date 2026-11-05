@@ -26,7 +26,7 @@ small, deterministic, and read-only.
   label counts from a repository result without introducing another
   fixture-read boundary.
 - `src/item-labels.js` owns `countLabels(items)`, the single prototype-free
-  label-to-item-count map that item facets reuse.
+  label-to-item-count map that item facets and the item-label read reuse.
 - `src/item-vocabulary.js` derives unique, ordinal-sorted status, category, and
   flattened label values from a repository result without introducing another
   fixture-read boundary.
@@ -49,6 +49,10 @@ small, deterministic, and read-only.
   normalized filters for the complete repository-filtered set. It shares the
   summary filters and validation rules, supports deterministic cache
   validators, and does not accept sorting or pagination.
+- `GET /api/items/labels` reports the `countLabels` map as `data` and
+  normalized filters for the complete repository-filtered set. It shares the
+  summary filters and validation rules, supports deterministic cache
+  validators, and does not accept sorting or pagination.
 - `GET /api/capabilities` exposes the schema version 1 capability manifest in
   stable order with deterministic cache validators. It omits fixture-instance
   inventory, volatile metadata, writes, persistence, and runtime introspection.
@@ -59,8 +63,8 @@ small, deterministic, and read-only.
   `{ "name": ..., "version": ..., "runtime": { "node": ... } }`. The `node`
   value is fixed for the process and varies by host.
 - The API exposes GET-only health, capability-discovery, item, item-batch,
-  item-vocabulary, item-summary, item-facet, and item-count reads. It has no
-  database, persistence, or write operation.
+  item-vocabulary, item-summary, item-facet, item-count, and item-label reads.
+  It has no database, persistence, or write operation.
 - `npm run build` checks source syntax; `npm test` verifies the HTTP contract.
 - Release automation is confined to
   `.github/workflows/release-version-dry-run.yml` and

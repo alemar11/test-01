@@ -148,6 +148,12 @@ const expectedCapabilityManifest = {
       controls: { ...expectedItemFilterControls },
     },
     {
+      id: "item-labels",
+      method: "GET",
+      path: "/api/items/labels",
+      controls: { ...expectedItemFilterControls },
+    },
+    {
       id: "item-detail",
       method: "GET",
       path: "/api/items/:id",
@@ -187,6 +193,7 @@ test("capability manifest exposes an exact immutable schema version 1 contract",
     "item-summary",
     "item-facets",
     "item-count",
+    "item-labels",
     "item-detail",
     "capability-discovery",
   ]);
@@ -484,6 +491,22 @@ function expectedCountResponse({ count = 2, filters = {} } = {}) {
   };
 }
 
+function expectedLabelsResponse({
+  data = expectedFacets.byLabel,
+  filters = {},
+} = {}) {
+  return {
+    data,
+    filters: {
+      status: null,
+      category: null,
+      label: null,
+      q: null,
+      ...filters,
+    },
+  };
+}
+
 function expectedFacetResponse({ data = expectedFacets, filters = {} } = {}) {
   return {
     data,
@@ -533,6 +556,7 @@ test("advertised paths and filter semantics match provider behavior", async () =
     "item-summary": `?${sharedFilters}`,
     "item-facets": `?${sharedFilters}`,
     "item-count": `?${sharedFilters}`,
+    "item-labels": `?${sharedFilters}`,
   };
   const resultsByCapabilityId = Object.create(null);
 
@@ -552,6 +576,7 @@ test("advertised paths and filter semantics match provider behavior", async () =
   const summary = resultsByCapabilityId["item-summary"];
   const facets = resultsByCapabilityId["item-facets"];
   const count = resultsByCapabilityId["item-count"];
+  const labels = resultsByCapabilityId["item-labels"];
   const detail = resultsByCapabilityId["item-detail"];
   const discovery = resultsByCapabilityId["capability-discovery"];
 
@@ -626,6 +651,19 @@ test("advertised paths and filter semantics match provider behavior", async () =
       },
     }),
   );
+  assert.equal(labels.status, 200);
+  assert.deepEqual(
+    labels.body,
+    expectedLabelsResponse({
+      data: { featured: 1, "read-only": 1 },
+      filters: {
+        status: "active",
+        category: "core-service",
+        label: "featured",
+        q: "irs",
+      },
+    }),
+  );
   assert.deepEqual(detail.body, { data: expectedItems[0] });
   assert.deepEqual(discovery.body, expectedCapabilityManifest);
 
@@ -642,6 +680,18 @@ test("advertised paths and filter semantics match provider behavior", async () =
     ["/api/items/count?status=ACTIVE", (body) => body.data.count],
     ["/api/items/count?category=CORE-SERVICE", (body) => body.data.count],
     ["/api/items/count?label=FEATURED", (body) => body.data.count],
+    [
+      "/api/items/labels?status=ACTIVE",
+      (body) => Object.keys(body.data).length,
+    ],
+    [
+      "/api/items/labels?category=CORE-SERVICE",
+      (body) => Object.keys(body.data).length,
+    ],
+    [
+      "/api/items/labels?label=FEATURED",
+      (body) => Object.keys(body.data).length,
+    ],
   ]) {
     const result = await get(path);
 
@@ -793,6 +843,7 @@ const readRoutes = [
   "/api/items?status=active&limit=1",
   "/api/items/summary",
   "/api/items/facets",
+  "/api/items/labels",
   "/api/items/batch?ids=item-1,item-2",
   "/api/items/vocabulary",
   "/api/items/item-1",
@@ -1223,6 +1274,67 @@ test("GET /api/items/count matches the collection total for the same filters", a
       filters,
     );
     assert.deepEqual(count.body.filters, { status, category, label, q }, filters);
+  }
+});
+
+test("GET /api/items/labels returns deterministic full-set label counts", async () => {
+  const firstResult = await get("/api/items/labels");
+  const secondResult = await get("/api/items/labels");
+
+  assert.equal(firstResult.status, 200);
+  assert.deepEqual(firstResult.body, expectedLabelsResponse());
+  assert.equal(secondResult.text, firstResult.text);
+  assert.equal(assertValidEtag(secondResult), assertValidEtag(firstResult));
+});
+
+test("GET /api/items/labels composes exact filters and normalized search", async () => {
+  const result = await get(
+    "/api/items/labels?label=read-only&category=support-service&status=active&q=%20SECOND%20",
+  );
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(
+    result.body,
+    expectedLabelsResponse({
+      data: { "read-only": 1, support: 1 },
+      filters: {
+        status: "active",
+        category: "support-service",
+        label: "read-only",
+        q: "second",
+      },
+    }),
+  );
+});
+
+test("GET /api/items/labels returns an empty map for zero matches", async () => {
+  const result = await get("/api/items/labels?label=featured&q=missing");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(
+    result.body,
+    expectedLabelsResponse({
+      data: {},
+      filters: { label: "featured", q: "missing" },
+    }),
+  );
+});
+
+test("GET /api/items/labels matches facet label counts for the same filters", async () => {
+  for (const filters of [
+    "",
+    "q=item",
+    "label=read-only",
+    "category=support-service&q=%20SECOND%20",
+    "status=active&label=featured",
+    "status=inactive",
+  ]) {
+    const facets = await get(`/api/items/facets?${filters}`);
+    const labels = await get(`/api/items/labels?${filters}`);
+
+    assert.equal(labels.status, 200, filters);
+    assert.deepEqual(labels.body.data, facets.body.data.byLabel, filters);
+    assert.deepEqual(labels.body.filters, facets.body.filters, filters);
   }
 });
 
@@ -1730,6 +1842,18 @@ for (const query of [
     });
   });
 
+  test(`GET /api/items/labels rejects invalid query: ${query}`, async () => {
+    const result = await get(`/api/items/labels?${query}`);
+
+    assert.equal(result.status, 400);
+    assert.deepEqual(result.body, {
+      error: {
+        code: "invalid_query",
+        message: "Invalid query parameters",
+      },
+    });
+  });
+
   test(`GET /api/items/count rejects invalid query: ${query}`, async () => {
     const result = await get(`/api/items/count?${query}`);
 
@@ -1989,6 +2113,7 @@ test("successful baseline GET representations have stable validators", async () 
     "/api/items/summary?label=read-only",
     "/api/items/facets?label=read-only",
     "/api/items/count?label=read-only",
+    "/api/items/labels?label=read-only",
     "/api/items/item-1",
   ]) {
     const firstResult = await get(path);
@@ -2086,6 +2211,25 @@ test("count validators are stable, normalized, and representation-specific", asy
   assert.deepEqual(normalized.body, canonical.body);
 
   const conditional = await request("/api/items/count?label=featured", {
+    headers: { "If-None-Match": featured.headers.get("etag") },
+  });
+
+  assert.equal(conditional.status, 304);
+  assert.equal(conditional.text, "");
+  assert.equal(conditional.headers.get("etag"), featured.headers.get("etag"));
+});
+
+test("label validators are stable, normalized, and representation-specific", async () => {
+  const featured = await get("/api/items/labels?label=featured");
+  const support = await get("/api/items/labels?label=support");
+  const normalized = await get("/api/items/labels?q=%20ITEM%20");
+  const canonical = await get("/api/items/labels?q=item");
+
+  assert.notEqual(assertValidEtag(featured), assertValidEtag(support));
+  assert.equal(assertValidEtag(normalized), assertValidEtag(canonical));
+  assert.deepEqual(normalized.body, canonical.body);
+
+  const conditional = await request("/api/items/labels?label=featured", {
     headers: { "If-None-Match": featured.headers.get("etag") },
   });
 
@@ -2311,6 +2455,7 @@ for (const path of [
   "/api/items/summary",
   "/api/items/facets",
   "/api/items/count",
+  "/api/items/labels",
   "/api/items/item-1",
 ]) {
   test(`non-GET ${path} retains the generic 404 contract`, async () => {
