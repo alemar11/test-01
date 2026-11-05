@@ -4,6 +4,7 @@ const { name, version } = require("../package.json");
 const capabilityManifest = require("./capabilities");
 const { sendValidatedJson } = require("./http-cache");
 const { facetItems } = require("./item-facets");
+const { countLabels } = require("./item-labels");
 const { summarizeItems } = require("./item-summary");
 const { vocabularyItems } = require("./item-vocabulary");
 const { findItemById, listItems } = require("./items-repository");
@@ -258,6 +259,24 @@ app.get("/api/items/count", (request, response) => {
 
   sendValidatedJson(request, response, {
     data: { count: listItems(normalizedFilters).length },
+    filters: normalizedFilters,
+  });
+});
+
+app.get("/api/items/labels", (request, response) => {
+  const filters = parseItemFilters(
+    request.query,
+    supportedSummaryQueryParameters,
+  );
+  if (filters === null) {
+    invalidQuery(response);
+    return;
+  }
+
+  const normalizedFilters = normalizeItemFilters(filters);
+
+  sendValidatedJson(request, response, {
+    data: countLabels(listItems(normalizedFilters)),
     filters: normalizedFilters,
   });
 });
