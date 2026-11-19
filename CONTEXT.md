@@ -9,7 +9,8 @@ small, deterministic, and read-only.
 - `src/server.js` starts the process; `src/app.js` owns the HTTP application.
 - `src/capabilities.js` owns the deeply frozen schema-versioned provider
   capability manifest. It advertises only stable read surfaces and their
-  compatibility-relevant controls, constrained values, defaults, and limits.
+  compatibility-relevant controls, constrained values, defaults, and limits. A
+  manifest control is optional unless it is marked `required: true`.
 - `src/data.js` contains the frozen static fixtures, including stable
   lower-kebab item categories and deterministically ordered, immutable label
   arrays.

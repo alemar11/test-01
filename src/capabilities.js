@@ -91,6 +91,7 @@ const manifest = deepFreeze({
           nonBlank: true,
           minimum: 1,
           maximum: 50,
+          required: true,
         },
       },
     },
