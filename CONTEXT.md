@@ -59,6 +59,11 @@ small, deterministic, and read-only.
   normalized filters for the complete repository-filtered set. It shares the
   summary filters and validation rules, supports deterministic cache
   validators, and does not accept sorting or pagination.
+- `GET /api/items/search` returns at most `limit` items (1 to 50, default 10)
+  whose name contains the required, nonblank, trimmed and case-folded `q`,
+  ordered by name, as `{ data, query: { q, limit } }`. It accepts no other
+  parameters, supports deterministic cache validators, and has no pagination
+  or total.
 - `GET /api/capabilities` exposes the schema version 1 capability manifest in
   stable order with deterministic cache validators. It omits fixture-instance
   inventory, volatile metadata, writes, persistence, and runtime introspection.
@@ -69,7 +74,8 @@ small, deterministic, and read-only.
   `{ "name": ..., "version": ..., "runtime": { "node": ... } }`. The `node`
   value is fixed for the process and varies by host.
 - The API exposes GET-only health, capability-discovery, item, item-batch,
-  item-vocabulary, item-summary, item-facet, item-count, and item-label reads.
+  item-vocabulary, item-summary, item-facet, item-count, item-label, and
+  item-search reads.
   It has no database, persistence, or write operation.
 - `npm run build` checks source syntax; `npm test` verifies the HTTP contract.
 - Release automation is confined to

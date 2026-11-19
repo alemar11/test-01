@@ -155,6 +155,21 @@ const expectedCapabilityManifest = {
       controls: { ...expectedItemFilterControls },
     },
     {
+      id: "item-search",
+      method: "GET",
+      path: "/api/items/search",
+      controls: {
+        q: { ...expectedItemFilterControls.q, required: true },
+        limit: {
+          type: "integer",
+          cardinality: "single",
+          minimum: 1,
+          maximum: 50,
+          default: 10,
+        },
+      },
+    },
+    {
       id: "item-detail",
       method: "GET",
       path: "/api/items/:id",
@@ -195,6 +210,7 @@ test("capability manifest exposes an exact immutable schema version 1 contract",
     "item-facets",
     "item-count",
     "item-labels",
+    "item-search",
     "item-detail",
     "capability-discovery",
   ]);
@@ -558,6 +574,7 @@ test("advertised paths and filter semantics match provider behavior", async () =
     "item-facets": `?${sharedFilters}`,
     "item-count": `?${sharedFilters}`,
     "item-labels": `?${sharedFilters}`,
+    "item-search": "?q=%20IRS%20&limit=1",
   };
   const resultsByCapabilityId = Object.create(null);
 
@@ -578,6 +595,7 @@ test("advertised paths and filter semantics match provider behavior", async () =
   const facets = resultsByCapabilityId["item-facets"];
   const count = resultsByCapabilityId["item-count"];
   const labels = resultsByCapabilityId["item-labels"];
+  const search = resultsByCapabilityId["item-search"];
   const detail = resultsByCapabilityId["item-detail"];
   const discovery = resultsByCapabilityId["capability-discovery"];
 
@@ -665,6 +683,11 @@ test("advertised paths and filter semantics match provider behavior", async () =
       },
     }),
   );
+  assert.equal(search.status, 200);
+  assert.deepEqual(search.body, {
+    data: [expectedItems[0]],
+    query: { q: "irs", limit: 1 },
+  });
   assert.deepEqual(detail.body, { data: expectedItems[0] });
   assert.deepEqual(discovery.body, expectedCapabilityManifest);
 
@@ -845,6 +868,7 @@ const readRoutes = [
   "/api/items/summary",
   "/api/items/facets",
   "/api/items/labels",
+  "/api/items/search?q=item",
   "/api/items/batch?ids=item-1,item-2",
   "/api/items/vocabulary",
   "/api/items/item-1",
@@ -1338,6 +1362,88 @@ test("GET /api/items/labels matches facet label counts for the same filters", as
     assert.deepEqual(labels.body.filters, facets.body.filters, filters);
   }
 });
+
+test("GET /api/items/search returns name-ordered matches with the default limit", async () => {
+  const result = await get("/api/items/search?q=item");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: [expectedItems[0], expectedItems[1]],
+    query: { q: "item", limit: 10 },
+  });
+});
+
+test("GET /api/items/search matches a trimmed, case-folded q", async () => {
+  const result = await get("/api/items/search?q=%20SECOND%20");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: [expectedItems[1]],
+    query: { q: "second", limit: 10 },
+  });
+});
+
+test("GET /api/items/search truncates name-ordered matches to limit", async () => {
+  const result = await get("/api/items/search?q=%20ITEM%20&limit=1");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: [expectedItems[0]],
+    query: { q: "item", limit: 1 },
+  });
+});
+
+test("GET /api/items/search accepts a limit with leading zeros", async () => {
+  const result = await get("/api/items/search?q=item&limit=010");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.query, { q: "item", limit: 10 });
+  assert.equal(result.body.data.length, 2);
+});
+
+test("GET /api/items/search returns an empty list for zero matches", async () => {
+  const result = await get("/api/items/search?q=missing&limit=50");
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {
+    data: [],
+    query: { q: "missing", limit: 50 },
+  });
+});
+
+for (const query of [
+  "",
+  "limit=5",
+  "q=",
+  "q=%20%20",
+  "q=a&q=b",
+  "q[a]=b",
+  "q[]=item",
+  "q=item&limit=0",
+  "q=item&limit=-1",
+  "q=item&limit=51",
+  "q=item&limit=1.5",
+  "q=item&limit=%2B5",
+  "q=item&limit=abc",
+  "q=item&limit=",
+  "q=item&limit=2&limit=3",
+  "q=item&status=active",
+  "q=item&page=1",
+  "q=item&unknown=1",
+]) {
+  test(`GET /api/items/search rejects invalid query: ${query}`, async () => {
+    const result = await get(`/api/items/search?${query}`);
+
+    assert.equal(result.status, 400);
+    assert.deepEqual(result.body, {
+      error: {
+        code: "invalid_query",
+        message: "Invalid query parameters",
+      },
+    });
+    assert.equal(result.headers.get("etag"), null);
+  });
+}
 
 test("GET /api/items/summary composes collection-equivalent filters", async () => {
   const result = await get(
@@ -2115,6 +2221,7 @@ test("successful baseline GET representations have stable validators", async () 
     "/api/items/facets?label=read-only",
     "/api/items/count?label=read-only",
     "/api/items/labels?label=read-only",
+    "/api/items/search?q=item",
     "/api/items/item-1",
   ]) {
     const firstResult = await get(path);
@@ -2457,6 +2564,7 @@ for (const path of [
   "/api/items/facets",
   "/api/items/count",
   "/api/items/labels",
+  "/api/items/search?q=item",
   "/api/items/item-1",
 ]) {
   test(`non-GET ${path} retains the generic 404 contract`, async () => {

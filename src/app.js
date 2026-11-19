@@ -41,6 +41,7 @@ const supportedSummaryQueryParameters = new Set([
   "label",
   "q",
 ]);
+const supportedSearchQueryParameters = new Set(["q", "limit"]);
 
 app.disable("x-powered-by");
 app.disable("etag");
@@ -278,6 +279,31 @@ app.get("/api/items/labels", (request, response) => {
   sendValidatedJson(request, response, {
     data: countLabels(listItems(normalizedFilters)),
     filters: normalizedFilters,
+  });
+});
+
+app.get("/api/items/search", (request, response) => {
+  const filters = parseItemFilters(
+    request.query,
+    supportedSearchQueryParameters,
+  );
+  const parsedLimit = parsePositiveInteger(request.query.limit);
+  if (
+    filters === null ||
+    filters.q === undefined ||
+    parsedLimit === null ||
+    parsedLimit > 50
+  ) {
+    invalidQuery(response);
+    return;
+  }
+
+  const { q } = normalizeItemFilters(filters);
+  const limit = parsedLimit ?? 10;
+
+  sendValidatedJson(request, response, {
+    data: listItems({ q, sort: "name" }).slice(0, limit),
+    query: { q, limit },
   });
 });
 
