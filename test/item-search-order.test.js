@@ -20,8 +20,8 @@ require.cache[dataPath] = {
   exports: {
     items: Object.freeze([
       syntheticItem("z-1", "beta Item"),
-      syntheticItem("a-2", "Alpha item"),
       syntheticItem("m-3", "alpha ITEM"),
+      syntheticItem("a-2", "Alpha item"),
       syntheticItem("c-4", "Gamma"),
     ]),
   },
