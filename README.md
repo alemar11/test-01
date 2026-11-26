@@ -2,7 +2,8 @@
 
 `test-01` is a small Node.js demo API used to exercise repository and delivery
 skills. It serves deterministic, static fixtures through a read-only Express
-API.
+API. Its Python client and CLI live in
+[`test-02`](https://github.com/alemar11/test-02).
 
 There is intentionally no database, persistence, or write operation: the API
 currently exposes GET endpoints only.
